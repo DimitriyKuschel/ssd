@@ -1,0 +1,25 @@
+[Unit]
+Description=ssd
+
+[Service]
+Type=simple
+User=ssd
+Group=ssd
+PIDFile=/run/ssd/ssd.pid
+RuntimeDirectory=ssd
+TimeoutStopSec=86400
+
+ExecStart=/usr/sbin/ssd -config /etc/ssd/config.yml
+ExecStop=/bin/kill -s TERM $MAINPID
+
+Restart=always
+RestartSec=300s
+
+StandardOutput=syslog
+StandardError=syslog
+
+LimitNOFILE=131072
+
+[Install]
+WantedBy=multi-user.target
+Alias=ssd.service
