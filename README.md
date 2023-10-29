@@ -9,7 +9,7 @@ SSD is a high-performance utility designed to capture and aggregate trending sta
 1. Download and install **goreleaser** from [here](https://goreleaser.com/install/).
 2. Clone the repository:
     ```bash
-    git clone <repository_url>
+    git clone https://github.com/DimitriyKuschel/ssd
     ```
 3. Enter the project directory:
     ```bash
