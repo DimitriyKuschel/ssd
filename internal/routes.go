@@ -12,6 +12,7 @@ func InitRoutes(apiController *controllers.ApiController, conf *structures.Confi
 
 	routers.Get("/list", http.HandlerFunc(apiController.GetStats))
 	routers.Post("/", http.HandlerFunc(apiController.ReceiveStats))
-
+	routers.Get("/fingerprints", http.HandlerFunc(apiController.GetPersonalStats))
+	routers.Get("/fingerprint", http.HandlerFunc(apiController.GetByFingerprint))
 	return routers
 }

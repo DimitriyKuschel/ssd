@@ -19,6 +19,10 @@ var (
 	statistic = &models.Statistic{
 		Data: make(map[int]*models.StatRecord),
 	}
+
+	personalStats = &models.PersonalStats{
+		Data: make(map[string]*models.Statistic),
+	}
 )
 
 type StatisticServiceInterface interface {
@@ -30,6 +34,8 @@ type StatisticServiceInterface interface {
 	AggregateStats()
 	GetStatistic() map[int]*models.StatRecord
 	PutStatistic(data map[int]*models.StatRecord)
+	GetPersonalStatistic() map[string]*models.Statistic
+	GetByFingerprint(fp string) map[int]*models.StatRecord
 }
 
 type StatisticService struct {
@@ -76,6 +82,7 @@ func (ss *StatisticService) AggregateStats() {
 	ss.SwitchBuffer()
 	for _, v := range ss.GetNotActiveBuffer() {
 		statistic.IncStats(v)
+		personalStats.IncStats(v)
 	}
 	ss.ClearNotActiveBuffer()
 }
@@ -86,6 +93,18 @@ func (ss *StatisticService) GetStatistic() map[int]*models.StatRecord {
 
 func (ss *StatisticService) PutStatistic(data map[int]*models.StatRecord) {
 	statistic.PutData(data)
+}
+
+func (ss *StatisticService) GetPersonalStatistic() map[string]*models.Statistic {
+	return personalStats.GetData()
+}
+
+func (ss *StatisticService) GetByFingerprint(fp string) map[int]*models.StatRecord {
+	if val, ok := personalStats.Get(fp); ok {
+		return val.GetData()
+	}
+	return nil
+
 }
 
 func NewStatisticService() StatisticServiceInterface {

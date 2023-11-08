@@ -40,3 +40,23 @@ func (ac *ApiController) GetStats(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(200)
 	w.Write(gson)
 }
+
+func (ac *ApiController) GetPersonalStats(w http.ResponseWriter, r *http.Request) {
+	gson, e := json.Marshal(ac.service.GetPersonalStatistic())
+	if e != nil {
+		http.Error(w, e.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(200)
+	w.Write(gson)
+}
+
+func (ac *ApiController) GetByFingerprint(w http.ResponseWriter, r *http.Request) {
+	gson, e := json.Marshal(ac.service.GetByFingerprint(r.URL.Query().Get("f")))
+	if e != nil {
+		http.Error(w, e.Error(), http.StatusBadRequest)
+		return
+	}
+	w.WriteHeader(200)
+	w.Write(gson)
+}

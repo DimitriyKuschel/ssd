@@ -17,7 +17,7 @@ SSD is a high-performance utility designed to capture and aggregate trending sta
     ```
 4. Build the project:
     ```bash
-    go get -u && go vet && git tag -f v1.0.0 && goreleaser --rm-dist --skip-publish --skip-validate
+    go get -u && go vet && git tag -f v1.1.0 && goreleaser --rm-dist --skip-publish --skip-validate
     ```
 5. Run the binary tailored for your platform from the `dist` directory.
 
@@ -27,10 +27,13 @@ Execute the application to use the default configuration. If needed, customize t
 ## Documentation
 ### Endpoints
 
-| Action        | Description  | URL     | Method | Payload/Parameters | Response           | Notes |
-|---------------|--------------|---------|--------|--------------------|--------------------|-------|
-| Add statistic | Record stats to the in-memory DB. When views for an item exceed 512, the system divides views and clicks by 2, incrementing the division counter, Ftr, by 1. This allows for trending CTR calculation or full views and clicks reproduction. | `/` | POST   | `{"v": ["105318","58440"],"c": ["58440"],"f": "1035ed17aa899a3846b91b57021c2b4f"}` | Status: 201 Created | `v`: IDs of viewed content<br/>`c`: IDs of clicked content<br/>`f`: User fingerprint |
-| Get statistic | Retrieve stats from the in-memory DB. | `/list` | GET | - | Status: 200 | JSON response with content ID as key. Includes trending clicks, views, and applied divisions. |
+| Action           | Description                                                                                                                                                                                                                                  | URL     | Method | Payload/Parameters | Response           | Notes                                                                                         |
+|------------------|----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------|--------|--------------------|--------------------|-----------------------------------------------------------------------------------------------|
+| Add statistic    | Record stats to the in-memory DB. When views for an item exceed 512, the system divides views and clicks by 2, incrementing the division counter, Ftr, by 1. This allows for trending CTR calculation or full views and clicks reproduction. | `/` | POST   | `{"v": ["105318","58440"],"c": ["58440"],"f": "1035ed17aa899a3846b91b57021c2b4f"}` | Status: 201 Created | `v`: IDs of viewed content<br/>`c`: IDs of clicked content<br/>`f`: User fingerprint          |
+| Get statistic    | Retrieve stats from the in-memory DB.                                                                                                                                                                                                        | `/list` | GET | - | Status: 200 | JSON response with content ID as key. Includes trending clicks, views, and applied divisions. |
+| Get Fingerprints | Retrieve all statistic grouped by fingerprints                                                                                                                                                                                               | `/fingerprints` | GET | - | Status: 200 | JSON response with Fingerprint as key and sub object where ID as key and statistic.           |
+| Get By fingerprint | Retrieve all statistic by fingerprint | `/fingerprint` | GET | f - fingerprint | Status: 200 | JSON response with content ID as key. Includes trending clicks, views, and applied divisions. |                                                                                                                                                                                                                         
+
 
 ### Configuration
 ```yaml

@@ -13,8 +13,8 @@ type StatRecord struct {
 }
 
 type Statistic struct {
-	Mutex sync.RWMutex
-	Data  map[int]*StatRecord
+	Mutex sync.RWMutex        `json:"-"`
+	Data  map[int]*StatRecord `json:"data"`
 }
 
 func (sm *Statistic) Get(key int) (*StatRecord, bool) {
