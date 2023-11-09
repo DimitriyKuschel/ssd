@@ -17,7 +17,7 @@ SSD is a high-performance utility designed to capture and aggregate trending sta
     ```
 4. Build the project:
     ```bash
-    go get -u && go vet && git tag -f v1.1.0 && goreleaser --rm-dist --skip-publish --skip-validate
+    go get -u && go vet && git tag -f v1.1.1 && goreleaser --rm-dist --skip-publish --skip-validate
     ```
 5. Run the binary tailored for your platform from the `dist` directory.
 

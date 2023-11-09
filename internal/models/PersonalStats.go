@@ -52,3 +52,10 @@ func (ps *PersonalStats) GetData() map[string]*Statistic {
 	}
 	return copyMap
 }
+
+func (ps *PersonalStats) PutData(stats map[string]*Statistic) {
+	ps.Lock()
+	defer ps.Unlock()
+
+	ps.Data = stats
+}

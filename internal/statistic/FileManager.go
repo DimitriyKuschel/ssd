@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"ssd/internal/models"
+	"ssd/internal/providers"
 	"ssd/internal/services"
 	"ssd/internal/statistic/interfaces"
 )
@@ -13,18 +14,25 @@ import (
 type FileManager struct {
 	service    services.StatisticServiceInterface
 	compressor interfaces.CompressorInterface
+	logger     providers.Logger
 }
 
-func NewFileManager(compressor interfaces.CompressorInterface, service services.StatisticServiceInterface) *FileManager {
+func NewFileManager(compressor interfaces.CompressorInterface, service services.StatisticServiceInterface, logger providers.Logger) *FileManager {
 	return &FileManager{
 		compressor: compressor,
 		service:    service,
+		logger:     logger,
 	}
 }
 func (f *FileManager) SaveToFile(fileName string) error {
 
+	fullStats := models.Storage{
+		TrendStats:    f.service.GetStatistic(),
+		PersonalStats: f.service.GetPersonalStatistic(),
+	}
+
 	// Marshal the data to a byte slice
-	jsonData, err := json.Marshal(f.service.GetStatistic())
+	jsonData, err := json.Marshal(fullStats)
 	if err != nil {
 		return err
 	}
@@ -84,13 +92,24 @@ func (f *FileManager) LoadFromFile(fileName string) error {
 		return err
 	}
 
-	var stats map[int]*models.StatRecord
-	err = json.Unmarshal(decompressedData, &stats)
-	if err != nil {
-		return err
-	}
+	var fullStats models.Storage
+	err = json.Unmarshal(decompressedData, &fullStats)
+	if err != nil || fullStats.TrendStats == nil || fullStats.PersonalStats == nil {
+		f.logger.Warnf(providers.TypeApp, "Inconsistent DB found, try to migrate from old data format")
+		var stats map[int]*models.StatRecord
+		err = json.Unmarshal(decompressedData, &stats)
+		if err != nil {
+			f.logger.Warnf(providers.TypeApp, "Migration failed")
+			return err
+		}
+		f.logger.Warnf(providers.TypeApp, "Migration Successful")
+		f.service.PutStatistic(stats)
+		f.service.PutPersonalStatistic(make(map[string]*models.Statistic))
 
-	f.service.PutStatistic(stats)
+	} else {
+		f.service.PutStatistic(fullStats.TrendStats)
+		f.service.PutPersonalStatistic(fullStats.PersonalStats)
+	}
 
 	return nil
 }

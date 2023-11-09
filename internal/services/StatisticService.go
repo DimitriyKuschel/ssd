@@ -36,6 +36,7 @@ type StatisticServiceInterface interface {
 	PutStatistic(data map[int]*models.StatRecord)
 	GetPersonalStatistic() map[string]*models.Statistic
 	GetByFingerprint(fp string) map[int]*models.StatRecord
+	PutPersonalStatistic(stats map[string]*models.Statistic)
 }
 
 type StatisticService struct {
@@ -93,6 +94,10 @@ func (ss *StatisticService) GetStatistic() map[int]*models.StatRecord {
 
 func (ss *StatisticService) PutStatistic(data map[int]*models.StatRecord) {
 	statistic.PutData(data)
+}
+
+func (ss *StatisticService) PutPersonalStatistic(stats map[string]*models.Statistic) {
+	personalStats.PutData(stats)
 }
 
 func (ss *StatisticService) GetPersonalStatistic() map[string]*models.Statistic {
