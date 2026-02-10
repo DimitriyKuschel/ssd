@@ -1,0 +1,14 @@
+services:
+  ssd:
+    build: .
+    ports:
+      - "${SSD_PORT:-8090}:8090"
+    volumes:
+      - ${SSD_DATA_DIR:-./data}:/data/ssd
+      - ${SSD_LOGS_DIR:-./logs}:/var/log/ssd
+    environment:
+      - SSD_LOG_LEVEL=${SSD_LOG_LEVEL:-info}
+      - SSD_AGGREGATION_INTERVAL=${SSD_AGGREGATION_INTERVAL:-60}
+      - SSD_SAVE_INTERVAL=${SSD_SAVE_INTERVAL:-120}
+    restart: unless-stopped
+    stop_grace_period: 10s

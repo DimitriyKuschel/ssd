@@ -28,7 +28,10 @@ func InitApp(cfg *structures.CliFlags) (*internal.App, error) {
 	}
 	statisticServiceInterface := services.NewStatisticService()
 	apiController := controllers.NewApiController(logger, statisticServiceInterface)
-	compressorInterface := statistic.NewZstdCompressor()
+	compressorInterface, err := statistic.NewZstdCompressor()
+	if err != nil {
+		return nil, err
+	}
 	fileManager := statistic.NewFileManager(compressorInterface, statisticServiceInterface, logger)
 	schedulerInterface := statistic.NewScheduler(config, logger, statisticServiceInterface, fileManager)
 	routerProviderInterface := internal.InitRoutes(apiController, config)

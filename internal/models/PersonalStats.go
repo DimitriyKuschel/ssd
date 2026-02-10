@@ -2,47 +2,57 @@ package models
 
 import "sync"
 
+const maxFingerprints = 100000
+
 type PersonalStats struct {
-	sync.RWMutex `json:"-"`
-	Data         map[string]*Statistic `json:"data"`
+	mu   sync.RWMutex          `json:"-"`
+	Data map[string]*Statistic `json:"data"`
 }
 
 func (ps *PersonalStats) IncStats(val *InputStats) {
-	ps.Lock()
-	defer ps.Unlock()
 	if val == nil {
 		return
 	}
-	if _, ok := ps.Data[val.Fingerprint]; !ok {
-		ps.Data[val.Fingerprint] = &Statistic{
+
+	ps.mu.Lock()
+	stat, ok := ps.Data[val.Fingerprint]
+	if !ok {
+		if len(ps.Data) >= maxFingerprints {
+			ps.mu.Unlock()
+			return
+		}
+		stat = &Statistic{
 			Data: make(map[int]*StatRecord),
 		}
+		ps.Data[val.Fingerprint] = stat
 	}
-	ps.Data[val.Fingerprint].IncStats(val)
+	ps.mu.Unlock()
+
+	stat.IncStats(val)
 }
 
 func (ps *PersonalStats) Get(key string) (*Statistic, bool) {
-	ps.RLock()
-	defer ps.RUnlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 	val, ok := ps.Data[key]
 	return val, ok
 }
 
 func (ps *PersonalStats) Set(key string, val *Statistic) {
-	ps.Lock()
-	defer ps.Unlock()
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 	ps.Data[key] = val
 }
 
 func (ps *PersonalStats) Len() int {
-	ps.RLock()
-	defer ps.RUnlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 	return len(ps.Data)
 }
 
 func (ps *PersonalStats) GetData() map[string]*Statistic {
-	ps.RLock()
-	defer ps.RUnlock()
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
 
 	copyMap := make(map[string]*Statistic)
 	for k, v := range ps.Data {
@@ -54,8 +64,8 @@ func (ps *PersonalStats) GetData() map[string]*Statistic {
 }
 
 func (ps *PersonalStats) PutData(stats map[string]*Statistic) {
-	ps.Lock()
-	defer ps.Unlock()
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
 
 	ps.Data = stats
 }

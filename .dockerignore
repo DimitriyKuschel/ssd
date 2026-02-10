@@ -1,0 +1,11 @@
+.git
+.gitignore
+*.md
+review.md
+CLAUDE.md
+dist/
+deployments/
+scripts/
+.env
+.env.*
+!.env.sample

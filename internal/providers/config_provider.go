@@ -12,9 +12,14 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 	var conf structures.Config
 
 	filename := filepath.Base(flags.ConfigPath)
-	viper.AddConfigPath(strings.Replace(flags.ConfigPath, filename, "", 1))
-	viper.SetConfigName(strings.Replace(filename, ".yml", "", 1))
+	viper.AddConfigPath(filepath.Dir(flags.ConfigPath))
+	viper.SetConfigName(strings.TrimSuffix(filename, filepath.Ext(filename)))
 	viper.SetConfigType("yaml")
+
+	viper.BindEnv("logger.level", "SSD_LOG_LEVEL")
+	viper.BindEnv("statistic.interval", "SSD_AGGREGATION_INTERVAL")
+	viper.BindEnv("persistence.saveInterval", "SSD_SAVE_INTERVAL")
+
 	err := viper.ReadInConfig()
 	if err != nil {
 		return nil, err
@@ -22,7 +27,7 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 
 	err = viper.Unmarshal(&conf)
 	if err != nil {
-		fmt.Printf("unable to decode into config struct, %v", err)
+		return nil, fmt.Errorf("unable to decode into config struct: %w", err)
 	}
 
 	cnfValidator := NewCnfValidator(&conf)
