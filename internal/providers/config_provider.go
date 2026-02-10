@@ -15,6 +15,11 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 	viper.AddConfigPath(filepath.Dir(flags.ConfigPath))
 	viper.SetConfigName(strings.TrimSuffix(filename, filepath.Ext(filename)))
 	viper.SetConfigType("yaml")
+
+	viper.BindEnv("logger.level", "SSD_LOG_LEVEL")
+	viper.BindEnv("statistic.interval", "SSD_AGGREGATION_INTERVAL")
+	viper.BindEnv("persistence.saveInterval", "SSD_SAVE_INTERVAL")
+
 	err := viper.ReadInConfig()
 	if err != nil {
 		return nil, err
