@@ -1,8 +1,8 @@
 package models
 
 import (
-	"github.com/spf13/cast"
 	"math"
+	"strconv"
 	"sync"
 )
 
@@ -13,55 +13,58 @@ type StatRecord struct {
 }
 
 type Statistic struct {
-	Mutex sync.RWMutex        `json:"-"`
+	mutex sync.RWMutex        `json:"-"`
 	Data  map[int]*StatRecord `json:"data"`
 }
 
 func (sm *Statistic) Get(key int) (*StatRecord, bool) {
-	sm.Mutex.RLock()
-	defer sm.Mutex.RUnlock()
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
 	val, ok := sm.Data[key]
-	return val, ok
+	if !ok {
+		return nil, false
+	}
+	return &StatRecord{Views: val.Views, Clicks: val.Clicks, Ftr: val.Ftr}, true
 }
 
 func (sm *Statistic) Set(key int, val *StatRecord) {
-	sm.Mutex.Lock()
-	defer sm.Mutex.Unlock()
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
 	sm.Data[key] = val
 }
 
 func (sm *Statistic) Len() int {
-	sm.Mutex.RLock()
-	defer sm.Mutex.RUnlock()
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
 	return len(sm.Data)
 }
 
 func (sm *Statistic) PutData(data map[int]*StatRecord) {
-	sm.Mutex.Lock()
-	defer sm.Mutex.Unlock()
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
 	sm.Data = data
 }
 
 func (sm *Statistic) GetData() map[int]*StatRecord {
-	sm.Mutex.RLock()
-	defer sm.Mutex.RUnlock()
+	sm.mutex.RLock()
+	defer sm.mutex.RUnlock()
 
-	copyMap := make(map[int]*StatRecord)
+	copyMap := make(map[int]*StatRecord, len(sm.Data))
 	for k, v := range sm.Data {
-		copyMap[k] = v
+		copyMap[k] = &StatRecord{
+			Views:  v.Views,
+			Clicks: v.Clicks,
+			Ftr:    v.Ftr,
+		}
 	}
 	return copyMap
 }
 
 func (sm *Statistic) IncStats(data *InputStats) {
-	sm.Mutex.Lock()
-	defer sm.Mutex.Unlock()
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
 
 	if data == nil {
-		return
-	}
-
-	if data.Views == nil || data.Clicks == nil {
 		return
 	}
 
@@ -69,18 +72,21 @@ func (sm *Statistic) IncStats(data *InputStats) {
 		if v == "" {
 			continue
 		}
-		key := cast.ToInt(v)
-		if _, ok := sm.Data[key]; ok {
+		key, err := strconv.Atoi(v)
+		if err != nil {
+			continue
+		}
+		if existing, ok := sm.Data[key]; ok {
 			tmp := &StatRecord{
-				Views:  sm.Data[key].Views + 1,
-				Clicks: sm.Data[key].Clicks,
-				Ftr:    sm.Data[key].Ftr,
+				Views:  existing.Views + 1,
+				Clicks: existing.Clicks,
+				Ftr:    existing.Ftr,
 			}
 
 			if tmp.Views > 512 {
-				tmp.Views = int(math.Ceil(float64(tmp.Views / 2)))
-				tmp.Clicks = int(math.Ceil(float64(tmp.Clicks / 2)))
-				tmp.Ftr += 1
+				tmp.Views = int(math.Ceil(float64(tmp.Views) / 2.0))
+				tmp.Clicks = int(math.Ceil(float64(tmp.Clicks) / 2.0))
+				tmp.Ftr++
 			}
 
 			sm.Data[key] = tmp
@@ -93,15 +99,18 @@ func (sm *Statistic) IncStats(data *InputStats) {
 		}
 	}
 	for _, v := range data.Clicks {
-		key := cast.ToInt(v)
 		if v == "" {
 			continue
 		}
-		if _, ok := sm.Data[key]; ok {
+		key, err := strconv.Atoi(v)
+		if err != nil {
+			continue
+		}
+		if existing, ok := sm.Data[key]; ok {
 			sm.Data[key] = &StatRecord{
-				Views:  sm.Data[key].Views,
-				Clicks: sm.Data[key].Clicks + 1,
-				Ftr:    sm.Data[key].Ftr,
+				Views:  existing.Views,
+				Clicks: existing.Clicks + 1,
+				Ftr:    existing.Ftr,
 			}
 		} else {
 			sm.Data[key] = &StatRecord{

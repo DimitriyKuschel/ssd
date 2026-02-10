@@ -2,7 +2,7 @@ package internal
 
 import (
 	"context"
-	"github.com/spf13/cast"
+	"fmt"
 	"net/http"
 	"os"
 	"os/signal"
@@ -10,6 +10,7 @@ import (
 	"ssd/internal/providers"
 	"ssd/internal/statistic/interfaces"
 	"ssd/internal/structures"
+	"strconv"
 	"syscall"
 	"time"
 )
@@ -19,46 +20,49 @@ type App struct {
 }
 
 func NewApp(apiController *controllers.ApiController, scheduler interfaces.SchedulerInterface, conf *structures.Config, logger providers.Logger, router providers.RouterProviderInterface) (*App, error) {
-	//routes
+	mux := http.NewServeMux()
 	for _, route := range router.GetRoutes() {
-		http.Handle(route.Url, route.Handler)
+		mux.Handle(route.Url, route.Handler)
 	}
 
-	//restore queues from file
 	logger.Infof(providers.TypeApp, "Starting %s", conf.AppName)
 	err := scheduler.Restore()
 	if err != nil {
 		logger.Errorf(providers.TypeApp, "Restore error: %s", err)
 	}
-	// Create a simple HTTP server
+
 	app := &App{
 		WebServer: &http.Server{
-			Addr: conf.WebServer.Host + ":" + cast.ToString(conf.WebServer.Port),
+			Addr:    conf.WebServer.Host + ":" + strconv.Itoa(conf.WebServer.Port),
+			Handler: mux,
 		},
 	}
-	//run scheduler
+
 	scheduler.Init()
-	// Run our server in a goroutine so that it doesn't block
+
+	serverErr := make(chan error, 1)
 	go func() {
 		logger.Infof(providers.TypeApp, "Listening HTTP clients on %s:%d", conf.WebServer.Host, conf.WebServer.Port)
-		if err = app.WebServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			panic(err)
+		if err := app.WebServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErr <- err
 		}
 	}()
 
-	// Listen for SIGINT (aka Ctrl+C) signal
 	stop := make(chan os.Signal, 1)
-	signal.Notify(stop, syscall.SIGINT)
+	signal.Notify(stop, syscall.SIGINT, syscall.SIGTERM)
 
-	// Block until we receive our signal
-	<-stop
+	select {
+	case <-stop:
+		logger.Infof(providers.TypeApp, "Shutdown signal received")
+	case err := <-serverErr:
+		return nil, fmt.Errorf("server error: %w", err)
+	}
 
-	// Create a deadline to wait for current connections to finish
+	scheduler.Stop()
+
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	// Doesn't block if no connections, but will otherwise wait
-	// until the timeout deadline before forcing a shutdown
 	if err = app.WebServer.Shutdown(ctx); err != nil {
 		return nil, err
 	}

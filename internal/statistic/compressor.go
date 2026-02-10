@@ -1,6 +1,7 @@
 package statistic
 
 import (
+	"fmt"
 	"github.com/klauspost/compress/zstd"
 	"ssd/internal/statistic/interfaces"
 )
@@ -18,8 +19,14 @@ func (z *ZstdCompression) Decompress(val []byte) ([]byte, error) {
 	return z.decoder.DecodeAll(val, nil)
 }
 
-func NewZstdCompressor() interfaces.CompressorInterface {
-	encoder, _ := zstd.NewWriter(nil)
-	decoder, _ := zstd.NewReader(nil, zstd.WithDecoderConcurrency(0))
-	return &ZstdCompression{encoder: encoder, decoder: decoder}
+func NewZstdCompressor() (interfaces.CompressorInterface, error) {
+	encoder, err := zstd.NewWriter(nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd encoder: %w", err)
+	}
+	decoder, err := zstd.NewReader(nil, zstd.WithDecoderConcurrency(0))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create zstd decoder: %w", err)
+	}
+	return &ZstdCompression{encoder: encoder, decoder: decoder}, nil
 }
