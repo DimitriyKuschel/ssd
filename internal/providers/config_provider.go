@@ -12,8 +12,8 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 	var conf structures.Config
 
 	filename := filepath.Base(flags.ConfigPath)
-	viper.AddConfigPath(strings.Replace(flags.ConfigPath, filename, "", 1))
-	viper.SetConfigName(strings.Replace(filename, ".yml", "", 1))
+	viper.AddConfigPath(filepath.Dir(flags.ConfigPath))
+	viper.SetConfigName(strings.TrimSuffix(filename, filepath.Ext(filename)))
 	viper.SetConfigType("yaml")
 	err := viper.ReadInConfig()
 	if err != nil {
@@ -22,7 +22,7 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 
 	err = viper.Unmarshal(&conf)
 	if err != nil {
-		fmt.Printf("unable to decode into config struct, %v", err)
+		return nil, fmt.Errorf("unable to decode into config struct: %w", err)
 	}
 
 	cnfValidator := NewCnfValidator(&conf)

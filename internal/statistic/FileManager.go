@@ -1,9 +1,7 @@
 package statistic
 
 import (
-	"bufio"
 	"encoding/json"
-	"io"
 	"os"
 	"ssd/internal/models"
 	"ssd/internal/providers"
@@ -24,67 +22,56 @@ func NewFileManager(compressor interfaces.CompressorInterface, service services.
 		logger:     logger,
 	}
 }
-func (f *FileManager) SaveToFile(fileName string) error {
 
+func (f *FileManager) SaveToFile(fileName string) error {
 	fullStats := models.Storage{
 		TrendStats:    f.service.GetStatistic(),
 		PersonalStats: f.service.GetPersonalStatistic(),
 	}
 
-	// Marshal the data to a byte slice
 	jsonData, err := json.Marshal(fullStats)
 	if err != nil {
 		return err
 	}
 	data, err := f.compressor.Compress(jsonData)
-
 	if err != nil {
 		return err
 	}
 
-	file, err := os.Create(fileName)
+	tmpFile := fileName + ".tmp"
+	file, err := os.Create(tmpFile)
 	if err != nil {
 		return err
 	}
-	defer file.Close()
 
-	// Write the compressed data to the binary file
 	_, err = file.Write(data)
 	if err != nil {
+		file.Close()
+		os.Remove(tmpFile)
 		return err
 	}
 
-	return nil
+	if err = file.Sync(); err != nil {
+		file.Close()
+		os.Remove(tmpFile)
+		return err
+	}
+
+	if err = file.Close(); err != nil {
+		os.Remove(tmpFile)
+		return err
+	}
+
+	return os.Rename(tmpFile, fileName)
 }
 
 func (f *FileManager) LoadFromFile(fileName string) error {
-	_, err := os.Stat(fileName)
-
-	if os.IsNotExist(err) {
-		return nil
-	}
-
-	file, err := os.Open(fileName)
+	data, err := os.ReadFile(fileName)
 	if err != nil {
-		return err
-	}
-	defer file.Close()
-
-	bufferedReader := bufio.NewReader(file)
-
-	var data []byte
-	buffer := make([]byte, 1024)
-	for {
-		n, err := bufferedReader.Read(buffer)
-		if err != nil {
-			if err == io.EOF {
-				break
-			} else {
-				return err
-			}
+		if os.IsNotExist(err) {
+			return nil
 		}
-
-		data = append(data, buffer[:n]...)
+		return err
 	}
 
 	decompressedData, err := f.compressor.Decompress(data)
