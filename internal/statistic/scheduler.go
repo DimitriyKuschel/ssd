@@ -7,7 +7,6 @@ import (
 	"ssd/internal/statistic/interfaces"
 	"ssd/internal/structures"
 	"sync"
-	"time"
 )
 
 type Scheduler struct {
@@ -24,7 +23,7 @@ func (s *Scheduler) Init() {
 	interval := s.config.Persistence.SaveInterval
 	statisticInterval := s.config.Statistic.Interval
 
-	s.cron.AddFunc(gron.Every(interval*time.Second), func() {
+	s.cron.AddFunc(gron.Every(interval), func() {
 		s.opsMu.Lock()
 		defer s.opsMu.Unlock()
 
@@ -36,7 +35,7 @@ func (s *Scheduler) Init() {
 		s.logger.Infof(providers.TypeApp, "Persisted data to file %s", s.config.Persistence.FilePath)
 	})
 
-	s.cron.AddFunc(gron.Every(statisticInterval*time.Second), func() {
+	s.cron.AddFunc(gron.Every(statisticInterval), func() {
 		s.opsMu.Lock()
 		defer s.opsMu.Unlock()
 
