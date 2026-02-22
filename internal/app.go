@@ -33,8 +33,11 @@ func NewApp(apiController *controllers.ApiController, scheduler interfaces.Sched
 
 	app := &App{
 		WebServer: &http.Server{
-			Addr:    conf.WebServer.Host + ":" + strconv.Itoa(conf.WebServer.Port),
-			Handler: mux,
+			Addr:         conf.WebServer.Host + ":" + strconv.Itoa(conf.WebServer.Port),
+			Handler:      mux,
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 10 * time.Second,
+			IdleTimeout:  60 * time.Second,
 		},
 	}
 

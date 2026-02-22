@@ -17,6 +17,7 @@ type StatisticServiceInterface interface {
 	GetByFingerprint(channel, fp string) map[int]*models.StatRecord
 	PutChannelData(channel string, trend map[int]*models.StatRecord, personal map[string]*models.Statistic)
 	GetChannels() []string
+	GetSnapshot() *models.Storage
 }
 
 type channelData struct {
@@ -25,14 +26,25 @@ type channelData struct {
 }
 
 type StatisticService struct {
-	mu        sync.Mutex
-	activeIdx int
-	buffers   [2][]*models.InputStats
-	chMu      sync.RWMutex
-	channels  map[string]*channelData
+	mu             sync.Mutex
+	activeIdx      int
+	buffers        [2][]*models.InputStats
+	prevBufSize    int
+	chMu           sync.RWMutex
+	channels       map[string]*channelData
+	cachedChannels []string
 }
 
 func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
+	// Fast path: read lock for existing channels
+	ss.chMu.RLock()
+	if ch, ok := ss.channels[name]; ok {
+		ss.chMu.RUnlock()
+		return ch
+	}
+	ss.chMu.RUnlock()
+
+	// Slow path: write lock with double-check
 	ss.chMu.Lock()
 	defer ss.chMu.Unlock()
 	if ch, ok := ss.channels[name]; ok {
@@ -50,12 +62,25 @@ func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
 		},
 	}
 	ss.channels[name] = ch
+	ss.rebuildChannelCache()
 	return ch
+}
+
+func (ss *StatisticService) rebuildChannelCache() {
+	channels := make([]string, 0, len(ss.channels))
+	for name := range ss.channels {
+		channels = append(channels, name)
+	}
+	sort.Strings(channels)
+	ss.cachedChannels = channels
 }
 
 func (ss *StatisticService) AddStats(data *models.InputStats) {
 	ss.mu.Lock()
 	idx := ss.activeIdx
+	if ss.buffers[idx] == nil && ss.prevBufSize > 0 {
+		ss.buffers[idx] = make([]*models.InputStats, 0, ss.prevBufSize)
+	}
 	ss.buffers[idx] = append(ss.buffers[idx], data)
 	ss.mu.Unlock()
 }
@@ -66,6 +91,9 @@ func (ss *StatisticService) AggregateStats() {
 	inactiveIdx := 1 - ss.activeIdx
 	data := ss.buffers[inactiveIdx]
 	ss.buffers[inactiveIdx] = nil
+	if len(data) > 0 {
+		ss.prevBufSize = len(data)
+	}
 	ss.mu.Unlock()
 
 	for _, v := range data {
@@ -125,13 +153,24 @@ func (ss *StatisticService) PutChannelData(channel string, trend map[int]*models
 
 func (ss *StatisticService) GetChannels() []string {
 	ss.chMu.RLock()
-	channels := make([]string, 0, len(ss.channels))
-	for name := range ss.channels {
-		channels = append(channels, name)
+	defer ss.chMu.RUnlock()
+	return ss.cachedChannels
+}
+
+func (ss *StatisticService) GetSnapshot() *models.Storage {
+	ss.chMu.RLock()
+	defer ss.chMu.RUnlock()
+
+	storage := &models.Storage{
+		Channels: make(map[string]*models.ChannelData, len(ss.channels)),
 	}
-	ss.chMu.RUnlock()
-	sort.Strings(channels)
-	return channels
+	for name, ch := range ss.channels {
+		storage.Channels[name] = &models.ChannelData{
+			TrendStats:    ch.statistic.GetData(),
+			PersonalStats: ch.personalStats.GetData(),
+		}
+	}
+	return storage
 }
 
 func NewStatisticService() StatisticServiceInterface {
@@ -139,7 +178,6 @@ func NewStatisticService() StatisticServiceInterface {
 		activeIdx: 0,
 		channels:  make(map[string]*channelData),
 	}
-	// Pre-create the default channel
 	ss.getOrCreateChannel(DefaultChannel)
 	return ss
 }

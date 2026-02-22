@@ -1,7 +1,7 @@
 package statistic
 
 import (
-	"encoding/json"
+	json "github.com/goccy/go-json"
 	"os"
 	"ssd/internal/models"
 	"ssd/internal/providers"
@@ -24,17 +24,7 @@ func NewFileManager(compressor interfaces.CompressorInterface, service services.
 }
 
 func (f *FileManager) SaveToFile(fileName string) error {
-	channels := f.service.GetChannels()
-	storage := models.Storage{
-		Channels: make(map[string]*models.ChannelData, len(channels)),
-	}
-
-	for _, ch := range channels {
-		storage.Channels[ch] = &models.ChannelData{
-			TrendStats:    f.service.GetStatistic(ch),
-			PersonalStats: f.service.GetPersonalStatistic(ch),
-		}
-	}
+	storage := f.service.GetSnapshot()
 
 	jsonData, err := json.Marshal(storage)
 	if err != nil {

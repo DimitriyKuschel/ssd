@@ -41,7 +41,8 @@ func (m *routeTestMockService) GetPersonalStatistic(_ string) map[string]*models
 func (m *routeTestMockService) GetByFingerprint(_, _ string) map[int]*models.StatRecord { return nil }
 func (m *routeTestMockService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {
 }
-func (m *routeTestMockService) GetChannels() []string { return nil }
+func (m *routeTestMockService) GetChannels() []string        { return nil }
+func (m *routeTestMockService) GetSnapshot() *models.Storage { return nil }
 
 func TestInitRoutes_RegistersFiveRoutes(t *testing.T) {
 	ac := controllers.NewApiController(&routeTestLogger{}, &routeTestMockService{}, &routeTestCache{})

@@ -14,8 +14,19 @@ func (ps *PersonalStats) IncStats(val *InputStats) {
 		return
 	}
 
-	ps.mu.Lock()
+	// Fast path: fingerprint already exists (read lock only)
+	ps.mu.RLock()
 	stat, ok := ps.Data[val.Fingerprint]
+	ps.mu.RUnlock()
+
+	if ok {
+		stat.IncStats(val)
+		return
+	}
+
+	// Slow path: write lock with double-check for new fingerprint
+	ps.mu.Lock()
+	stat, ok = ps.Data[val.Fingerprint]
 	if !ok {
 		if len(ps.Data) >= maxFingerprints {
 			ps.mu.Unlock()

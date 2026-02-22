@@ -111,6 +111,14 @@ func (m *MockStatisticService) GetChannels() []string {
 	return m.ChannelsList
 }
 
+func (m *MockStatisticService) GetSnapshot() *models.Storage {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return &models.Storage{
+		Channels: make(map[string]*models.ChannelData),
+	}
+}
+
 // MockCache implements providers.CacheProviderInterface.
 type MockCache struct {
 	mu   sync.Mutex

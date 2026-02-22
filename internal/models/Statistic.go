@@ -1,7 +1,6 @@
 package models
 
 import (
-	"math"
 	"strconv"
 	"sync"
 )
@@ -77,25 +76,14 @@ func (sm *Statistic) IncStats(data *InputStats) {
 			continue
 		}
 		if existing, ok := sm.Data[key]; ok {
-			tmp := &StatRecord{
-				Views:  existing.Views + 1,
-				Clicks: existing.Clicks,
-				Ftr:    existing.Ftr,
+			existing.Views++
+			if existing.Views > 512 {
+				existing.Views = (existing.Views + 1) >> 1
+				existing.Clicks = (existing.Clicks + 1) >> 1
+				existing.Ftr++
 			}
-
-			if tmp.Views > 512 {
-				tmp.Views = int(math.Ceil(float64(tmp.Views) / 2.0))
-				tmp.Clicks = int(math.Ceil(float64(tmp.Clicks) / 2.0))
-				tmp.Ftr++
-			}
-
-			sm.Data[key] = tmp
 		} else {
-			sm.Data[key] = &StatRecord{
-				Views:  1,
-				Clicks: 0,
-				Ftr:    0,
-			}
+			sm.Data[key] = &StatRecord{Views: 1}
 		}
 	}
 	for _, v := range data.Clicks {
@@ -107,17 +95,9 @@ func (sm *Statistic) IncStats(data *InputStats) {
 			continue
 		}
 		if existing, ok := sm.Data[key]; ok {
-			sm.Data[key] = &StatRecord{
-				Views:  existing.Views,
-				Clicks: existing.Clicks + 1,
-				Ftr:    existing.Ftr,
-			}
+			existing.Clicks++
 		} else {
-			sm.Data[key] = &StatRecord{
-				Views:  0,
-				Clicks: 1,
-				Ftr:    0,
-			}
+			sm.Data[key] = &StatRecord{Clicks: 1}
 		}
 	}
 }

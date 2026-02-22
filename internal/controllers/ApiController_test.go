@@ -41,7 +41,8 @@ func (m *mockService) GetPersonalStatistic(_ string) map[string]*models.Statisti
 func (m *mockService) GetByFingerprint(_, _ string) map[int]*models.StatRecord { return m.fpData }
 func (m *mockService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {
 }
-func (m *mockService) GetChannels() []string { return m.channelsList }
+func (m *mockService) GetChannels() []string        { return m.channelsList }
+func (m *mockService) GetSnapshot() *models.Storage { return nil }
 
 type mockCache struct {
 	data map[string][]byte

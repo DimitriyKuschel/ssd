@@ -92,6 +92,7 @@ func TestNoopCache_AlwaysMiss(t *testing.T) {
 
 func TestCacheProvider_TTLExpiry(t *testing.T) {
 	logger := &cacheTestLogger{}
+	// TTL = interval + 1 = 2s
 	c := NewCacheProvider(cacheConfig(true, 1, 1*time.Second), logger)
 
 	c.Set("key1", []byte("value1"))
@@ -99,7 +100,7 @@ func TestCacheProvider_TTLExpiry(t *testing.T) {
 	assert.True(t, ok)
 	assert.Equal(t, []byte("value1"), val)
 
-	time.Sleep(1100 * time.Millisecond)
+	time.Sleep(2100 * time.Millisecond)
 
 	_, ok = c.Get("key1")
 	assert.False(t, ok)

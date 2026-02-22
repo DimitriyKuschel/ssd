@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/coocood/freecache v1.2.5
+	github.com/goccy/go-json v0.10.5
 	github.com/google/wire v0.7.0
 	github.com/gookit/validate v1.5.6
 	github.com/klauspost/compress v1.18.4

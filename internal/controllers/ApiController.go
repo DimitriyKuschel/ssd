@@ -1,7 +1,7 @@
 package controllers
 
 import (
-	"encoding/json"
+	json "github.com/goccy/go-json"
 	"net/http"
 	"ssd/internal/models"
 	"ssd/internal/providers"
