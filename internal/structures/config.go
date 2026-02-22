@@ -22,6 +22,11 @@ type StatisticConfig struct {
 	Interval time.Duration `yaml:"interval" validate:"required|min:1"`
 }
 
+type CacheConfig struct {
+	Enabled bool `yaml:"enabled"`
+	Size    int  `yaml:"size"`
+}
+
 type Config struct {
 	AppName     string
 	Debug       bool
@@ -30,4 +35,5 @@ type Config struct {
 	WebServer   Server          `yaml:"webServer"`
 	Persistence Persistence     `yaml:"persistence"`
 	Logger      LoggerConfig    `yaml:"logger"`
+	Cache       CacheConfig     `yaml:"cache"`
 }

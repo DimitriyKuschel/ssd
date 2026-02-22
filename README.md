@@ -4,7 +4,8 @@ SSD is a high-performance Go daemon for collecting and aggregating real-time con
 
 ## Features
 
-- **High Performance** — double-buffer pattern for lock-free writes, up to ~164,000 req/sec
+- **High Performance** — double-buffer pattern for lock-free writes, up to ~150,000 POST req/sec
+- **Response Cache** — optional freecache-based caching of GET responses with TTL tied to aggregation interval; reduces P99 latency by up to 43%
 - **Zero Dependencies** — standalone binary, no databases or message queues required
 - **Trending Algorithm** — automatic time-decay: when views exceed 512, values are halved and the factor counter increments, enabling trending CTR calculation
 - **Fingerprint Tracking** — per-user statistics grouped by fingerprint
@@ -130,13 +131,16 @@ Returns statistics for a specific user fingerprint.
 ```yaml
 pidFile: "/tmp/ssd.pid"
 statistic:
-  interval: 60
+  interval: 60s
 webServer:
   host: "0.0.0.0"
   port: 8090
 persistence:
   filePath: "/data/ssd/data.bin"
-  saveInterval: 120
+  saveInterval: 120s
+cache:
+  enabled: true
+  size: 32
 logger:
   level: "info"
   mode: 0640
@@ -156,6 +160,8 @@ logger:
 | `logger.level` | Log level: `trace`, `debug`, `info`, `warn`, `error`, `fatal`, `panic` | `info` |
 | `logger.mode` | Log file permissions | `0640` |
 | `logger.dir` | Log files directory | `/var/log/ssd` |
+| `cache.enabled` | Enable response cache | `false` |
+| `cache.size` | Cache size in MB | `32` |
 
 ### Environment Variables (Docker)
 
@@ -167,8 +173,10 @@ Environment variables override YAML config values. Configure via `.env` file or 
 | `SSD_DATA_DIR` | Data directory on host | `./data` |
 | `SSD_LOGS_DIR` | Logs directory on host | `./logs` |
 | `SSD_LOG_LEVEL` | `logger.level` | `info` |
-| `SSD_AGGREGATION_INTERVAL` | `statistic.interval` | `60` |
-| `SSD_SAVE_INTERVAL` | `persistence.saveInterval` | `120` |
+| `SSD_AGGREGATION_INTERVAL` | `statistic.interval` | `60s` |
+| `SSD_SAVE_INTERVAL` | `persistence.saveInterval` | `120s` |
+| `SSD_CACHE_ENABLED` | `cache.enabled` | `true` |
+| `SSD_CACHE_SIZE` | `cache.size` | `32` |
 
 ## Architecture
 
@@ -194,15 +202,50 @@ HTTP Request → Router (method check) → ApiController → StatisticService (d
 │   ├── controllers/    HTTP handlers
 │   ├── di/             Wire dependency injection
 │   ├── models/         Data models (Statistic, PersonalStats, StatRecord)
-│   ├── providers/      Config, Logger, Router providers
+│   ├── providers/      Config, Logger, Router, Cache providers
 │   ├── services/       StatisticService (double-buffer core)
 │   ├── statistic/      Scheduler, FileManager, Zstd compressor
 │   └── structures/     Config schema, CLI flags, Route definitions
 ├── scripts/            Post-install script
+├── tests/loadtest/     Load test tool and configs
 ├── Dockerfile          Multi-stage build
 ├── docker-compose.yml  Docker Compose setup
 └── .env.sample         Environment config template
 ```
+
+## Benchmarks
+
+Load test: 50 concurrent workers, 10 seconds per phase, Apple Silicon. Source: `tests/loadtest/`.
+
+```bash
+go build -o /tmp/ssd-loadtest/ssd ./
+/tmp/ssd-loadtest/ssd -config tests/loadtest/config-cache-on.yml &
+go run tests/loadtest/main.go
+```
+
+### POST throughput (seeding phase)
+
+~150,000 RPS (P99 = 1.3ms). Cache has no effect on write path.
+
+### GET latency — Mixed load (70% POST, 30% GET)
+
+| Endpoint | Cache OFF P99 | Cache ON P99 | Improvement |
+|---|---|---|---|
+| GET /list | 21.5ms | 16.6ms | -23% |
+| GET /fingerprints | 85.8ms | 67.8ms | -21% |
+| GET /fingerprint | 37.2ms | 28.9ms | -22% |
+| GET /channels | 18.4ms | 16.2ms | -12% |
+| **Total RPS** | **10,129** | **11,430** | **+12.8%** |
+
+### GET latency — Read-heavy load (10% POST, 90% GET)
+
+| Endpoint | Cache OFF P99 | Cache ON P99 | Improvement |
+|---|---|---|---|
+| GET /list | 59.3ms | 33.9ms | -43% |
+| GET /fingerprints | 147.7ms | 136.1ms | -8% |
+| GET /fingerprint | 87.1ms | 71.2ms | -18% |
+| GET /channels | 42.7ms | 31.7ms | -26% |
+| **Total RPS** | **3,697** | **4,014** | **+8.6%** |
 
 ## Contributing
 

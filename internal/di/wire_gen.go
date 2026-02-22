@@ -27,7 +27,8 @@ func InitApp(cfg *structures.CliFlags) (*internal.App, error) {
 		return nil, err
 	}
 	statisticServiceInterface := services.NewStatisticService()
-	apiController := controllers.NewApiController(logger, statisticServiceInterface)
+	cacheProviderInterface := providers.NewCacheProvider(config, logger)
+	apiController := controllers.NewApiController(logger, statisticServiceInterface, cacheProviderInterface)
 	compressorInterface, err := statistic.NewZstdCompressor()
 	if err != nil {
 		return nil, err

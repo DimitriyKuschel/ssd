@@ -18,6 +18,7 @@ func InitApp(cfg *structures.CliFlags) (*internal.App, error) {
 	wire.Build(
 		providers.NewConfigProvider,
 		providers.NewLogProvider,
+		providers.NewCacheProvider,
 
 		statistic.NewZstdCompressor,
 		services.NewStatisticService,

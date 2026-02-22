@@ -8,7 +8,9 @@ services:
       - ${SSD_LOGS_DIR:-./logs}:/var/log/ssd
     environment:
       - SSD_LOG_LEVEL=${SSD_LOG_LEVEL:-info}
-      - SSD_AGGREGATION_INTERVAL=${SSD_AGGREGATION_INTERVAL:-60}
-      - SSD_SAVE_INTERVAL=${SSD_SAVE_INTERVAL:-120}
+      - SSD_AGGREGATION_INTERVAL=${SSD_AGGREGATION_INTERVAL:-60s}
+      - SSD_SAVE_INTERVAL=${SSD_SAVE_INTERVAL:-120s}
+      - SSD_CACHE_ENABLED=${SSD_CACHE_ENABLED:-true}
+      - SSD_CACHE_SIZE=${SSD_CACHE_SIZE:-32}
     restart: unless-stopped
     stop_grace_period: 10s

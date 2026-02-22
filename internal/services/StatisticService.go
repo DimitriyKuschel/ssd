@@ -1,26 +1,56 @@
 package services
 
 import (
+	"sort"
 	"ssd/internal/models"
 	"sync"
 )
 
+const DefaultChannel = "default"
+const maxChannels = 1000
+
 type StatisticServiceInterface interface {
 	AddStats(data *models.InputStats)
 	AggregateStats()
-	GetStatistic() map[int]*models.StatRecord
-	PutStatistic(data map[int]*models.StatRecord)
-	GetPersonalStatistic() map[string]*models.Statistic
-	GetByFingerprint(fp string) map[int]*models.StatRecord
-	PutPersonalStatistic(stats map[string]*models.Statistic)
+	GetStatistic(channel string) map[int]*models.StatRecord
+	GetPersonalStatistic(channel string) map[string]*models.Statistic
+	GetByFingerprint(channel, fp string) map[int]*models.StatRecord
+	PutChannelData(channel string, trend map[int]*models.StatRecord, personal map[string]*models.Statistic)
+	GetChannels() []string
+}
+
+type channelData struct {
+	statistic     *models.Statistic
+	personalStats *models.PersonalStats
 }
 
 type StatisticService struct {
-	mu            sync.Mutex
-	activeIdx     int
-	buffers       [2][]*models.InputStats
-	statistic     *models.Statistic
-	personalStats *models.PersonalStats
+	mu        sync.Mutex
+	activeIdx int
+	buffers   [2][]*models.InputStats
+	chMu      sync.RWMutex
+	channels  map[string]*channelData
+}
+
+func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
+	ss.chMu.Lock()
+	defer ss.chMu.Unlock()
+	if ch, ok := ss.channels[name]; ok {
+		return ch
+	}
+	if len(ss.channels) >= maxChannels {
+		return nil
+	}
+	ch := &channelData{
+		statistic: &models.Statistic{
+			Data: make(map[int]*models.StatRecord),
+		},
+		personalStats: &models.PersonalStats{
+			Data: make(map[string]*models.Statistic),
+		},
+	}
+	ss.channels[name] = ch
+	return ch
 }
 
 func (ss *StatisticService) AddStats(data *models.InputStats) {
@@ -39,42 +69,77 @@ func (ss *StatisticService) AggregateStats() {
 	ss.mu.Unlock()
 
 	for _, v := range data {
-		ss.statistic.IncStats(v)
-		ss.personalStats.IncStats(v)
+		chName := v.Channel
+		if chName == "" {
+			chName = DefaultChannel
+		}
+		ch := ss.getOrCreateChannel(chName)
+		if ch == nil {
+			continue
+		}
+		ch.statistic.IncStats(v)
+		ch.personalStats.IncStats(v)
 	}
 }
 
-func (ss *StatisticService) GetStatistic() map[int]*models.StatRecord {
-	return ss.statistic.GetData()
-}
-
-func (ss *StatisticService) PutStatistic(data map[int]*models.StatRecord) {
-	ss.statistic.PutData(data)
-}
-
-func (ss *StatisticService) PutPersonalStatistic(stats map[string]*models.Statistic) {
-	ss.personalStats.PutData(stats)
-}
-
-func (ss *StatisticService) GetPersonalStatistic() map[string]*models.Statistic {
-	return ss.personalStats.GetData()
-}
-
-func (ss *StatisticService) GetByFingerprint(fp string) map[int]*models.StatRecord {
-	if val, ok := ss.personalStats.Get(fp); ok {
-		return val.GetData()
+func (ss *StatisticService) GetStatistic(channel string) map[int]*models.StatRecord {
+	ss.chMu.RLock()
+	ch, ok := ss.channels[channel]
+	ss.chMu.RUnlock()
+	if ok {
+		return ch.statistic.GetData()
 	}
 	return nil
 }
 
-func NewStatisticService() StatisticServiceInterface {
-	return &StatisticService{
-		activeIdx: 0,
-		statistic: &models.Statistic{
-			Data: make(map[int]*models.StatRecord),
-		},
-		personalStats: &models.PersonalStats{
-			Data: make(map[string]*models.Statistic),
-		},
+func (ss *StatisticService) GetPersonalStatistic(channel string) map[string]*models.Statistic {
+	ss.chMu.RLock()
+	ch, ok := ss.channels[channel]
+	ss.chMu.RUnlock()
+	if ok {
+		return ch.personalStats.GetData()
 	}
+	return nil
+}
+
+func (ss *StatisticService) GetByFingerprint(channel, fp string) map[int]*models.StatRecord {
+	ss.chMu.RLock()
+	ch, ok := ss.channels[channel]
+	ss.chMu.RUnlock()
+	if ok {
+		if val, ok := ch.personalStats.Get(fp); ok {
+			return val.GetData()
+		}
+	}
+	return nil
+}
+
+func (ss *StatisticService) PutChannelData(channel string, trend map[int]*models.StatRecord, personal map[string]*models.Statistic) {
+	ch := ss.getOrCreateChannel(channel)
+	if ch == nil {
+		return
+	}
+	ch.statistic.PutData(trend)
+	ch.personalStats.PutData(personal)
+}
+
+func (ss *StatisticService) GetChannels() []string {
+	ss.chMu.RLock()
+	channels := make([]string, 0, len(ss.channels))
+	for name := range ss.channels {
+		channels = append(channels, name)
+	}
+	ss.chMu.RUnlock()
+	sort.Strings(channels)
+	return channels
+}
+
+func NewStatisticService() StatisticServiceInterface {
+	ss := &StatisticService{
+		activeIdx: 0,
+		channels:  make(map[string]*channelData),
+	}
+	// Pre-create the default channel
+	ss.getOrCreateChannel(DefaultChannel)
+	return ss
 }
