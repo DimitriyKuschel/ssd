@@ -12,5 +12,6 @@ services:
       - SSD_SAVE_INTERVAL=${SSD_SAVE_INTERVAL:-120s}
       - SSD_CACHE_ENABLED=${SSD_CACHE_ENABLED:-true}
       - SSD_CACHE_SIZE=${SSD_CACHE_SIZE:-32}
+      - SSD_METRICS_ENABLED=${SSD_METRICS_ENABLED:-true}
     restart: unless-stopped
     stop_grace_period: 10s

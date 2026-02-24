@@ -43,6 +43,8 @@ func (m *routeTestMockService) PutChannelData(_ string, _ map[int]*models.StatRe
 }
 func (m *routeTestMockService) GetChannels() []string        { return nil }
 func (m *routeTestMockService) GetSnapshot() *models.Storage { return nil }
+func (m *routeTestMockService) GetBufferSize() int           { return 0 }
+func (m *routeTestMockService) GetRecordCount(_ string) int  { return 0 }
 
 func TestInitRoutes_RegistersFiveRoutes(t *testing.T) {
 	ac := controllers.NewApiController(&routeTestLogger{}, &routeTestMockService{}, &routeTestCache{})

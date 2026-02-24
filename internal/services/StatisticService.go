@@ -18,6 +18,8 @@ type StatisticServiceInterface interface {
 	PutChannelData(channel string, trend map[int]*models.StatRecord, personal map[string]*models.Statistic)
 	GetChannels() []string
 	GetSnapshot() *models.Storage
+	GetBufferSize() int
+	GetRecordCount(channel string) int
 }
 
 type channelData struct {
@@ -171,6 +173,23 @@ func (ss *StatisticService) GetSnapshot() *models.Storage {
 		}
 	}
 	return storage
+}
+
+func (ss *StatisticService) GetBufferSize() int {
+	ss.mu.Lock()
+	n := len(ss.buffers[ss.activeIdx])
+	ss.mu.Unlock()
+	return n
+}
+
+func (ss *StatisticService) GetRecordCount(channel string) int {
+	ss.chMu.RLock()
+	ch, ok := ss.channels[channel]
+	ss.chMu.RUnlock()
+	if ok {
+		return ch.statistic.Len()
+	}
+	return 0
 }
 
 func NewStatisticService() StatisticServiceInterface {

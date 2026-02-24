@@ -4,6 +4,7 @@ import (
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"sync"
+	"time"
 )
 
 // MockLogger implements providers.Logger and records calls.
@@ -119,6 +120,16 @@ func (m *MockStatisticService) GetSnapshot() *models.Storage {
 	}
 }
 
+func (m *MockStatisticService) GetBufferSize() int {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return len(m.AddStatsCalls)
+}
+
+func (m *MockStatisticService) GetRecordCount(_ string) int {
+	return 0
+}
+
 // MockCache implements providers.CacheProviderInterface.
 type MockCache struct {
 	mu   sync.Mutex
@@ -140,6 +151,53 @@ func (m *MockCache) Set(key string, value []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Data[key] = value
+}
+
+// MockMetrics implements providers.MetricsProviderInterface as no-ops.
+type MockMetrics struct {
+	mu                       sync.Mutex
+	RequestsTotalCalls       int
+	RequestDurationCalls     int
+	CacheHitsCalls           int
+	CacheMissesCalls         int
+	PersistenceDurationCalls int
+	RecordsTotalCalls        int
+}
+
+func (m *MockMetrics) IncRequestsTotal(_ string, _ int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.RequestsTotalCalls++
+}
+
+func (m *MockMetrics) ObserveRequestDuration(_ string, _ time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.RequestDurationCalls++
+}
+
+func (m *MockMetrics) IncCacheHits() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CacheHitsCalls++
+}
+
+func (m *MockMetrics) IncCacheMisses() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.CacheMissesCalls++
+}
+
+func (m *MockMetrics) ObservePersistenceDuration(_ time.Duration) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.PersistenceDurationCalls++
+}
+
+func (m *MockMetrics) SetRecordsTotal(_ string, _ int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.RecordsTotalCalls++
 }
 
 // MockCompressor implements interfaces.CompressorInterface with injectable behavior.

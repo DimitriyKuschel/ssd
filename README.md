@@ -26,8 +26,10 @@ A high-performance Go daemon for collecting and aggregating real-time content st
 - **Channel Isolation** — separate stat namespaces via `ch` parameter (up to 1,000 channels), double-check RLock/Lock pattern
 - **Crash-Safe Persistence** — atomic file writes with Zstd compression
 - **Graceful Shutdown** — SIGINT/SIGTERM handling with data persistence before exit
+- **Prometheus Metrics** — optional `/metrics` endpoint with request counters, latency histograms, cache hit/miss, persistence duration, buffer/channel gauges
+- **Health Check** — `GET /health` for Kubernetes readiness/liveness probes (uptime, buffer size, channel count)
 - **HTTP Hardened** — server-side ReadTimeout, WriteTimeout, IdleTimeout
-- **Fully Tested** — 119 unit tests with race detector, 100% coverage on models and services
+- **Fully Tested** — unit tests with race detector, 100% coverage on models and services
 - **Docker Ready** — multi-stage Dockerfile included
 
 ## Quick Start
@@ -154,6 +156,38 @@ Returns all active channel names.
 ["default", "news", "blog"]
 ```
 
+### GET `/health` — Health Check
+
+Returns service health status. Useful for Kubernetes readiness/liveness probes.
+
+**Response:** `200 OK`
+```json
+{
+  "status": "ok",
+  "uptime": "1h30m45s",
+  "uptime_seconds": 5445.0,
+  "buffer_size": 128,
+  "channels": 3
+}
+```
+
+### GET `/metrics` — Prometheus Metrics
+
+Returns metrics in Prometheus text format. Only available when `metrics.enabled: true`.
+
+**Exported metrics:**
+
+| Metric | Type | Labels | Description |
+|--------|------|--------|-------------|
+| `ssd_requests_total` | Counter | endpoint, status | HTTP request count |
+| `ssd_request_duration_seconds` | Histogram | endpoint | Request latency |
+| `ssd_cache_hits_total` | Counter | — | Cache hit count |
+| `ssd_cache_misses_total` | Counter | — | Cache miss count |
+| `ssd_persistence_duration_seconds` | Histogram | — | Persistence operation duration |
+| `ssd_buffer_size` | Gauge | — | Items in the active buffer |
+| `ssd_channels_total` | Gauge | — | Number of channels |
+| `ssd_records_total` | Gauge | channel | Stat records per channel |
+
 ## Configuration
 
 ### YAML Config
@@ -171,6 +205,8 @@ persistence:
 cache:
   enabled: true
   size: 32
+metrics:
+  enabled: true
 logger:
   level: "info"
   mode: 0640
@@ -192,6 +228,7 @@ logger:
 | `logger.dir` | Log files directory | `/var/log/ssd` |
 | `cache.enabled` | Enable response cache | `false` |
 | `cache.size` | Cache size in MB | `32` |
+| `metrics.enabled` | Enable Prometheus `/metrics` endpoint | `false` |
 
 ### Environment Variables (Docker)
 
@@ -207,15 +244,16 @@ Environment variables override YAML config values. Configure via `.env` file or 
 | `SSD_SAVE_INTERVAL` | `persistence.saveInterval` | `120s` |
 | `SSD_CACHE_ENABLED` | `cache.enabled` | `true` |
 | `SSD_CACHE_SIZE` | `cache.size` | `32` |
+| `SSD_METRICS_ENABLED` | `metrics.enabled` | `true` |
 
 ## Architecture
 
 ```
-HTTP Request → Router (method check) → ApiController → StatisticService (double-buffer) → Models
-                                                              ↓
-                                          Scheduler (periodic aggregation + persistence)
-                                                              ↓
-                                          FileManager → Zstd Compressor → Disk
+HTTP Request → MetricsMiddleware → Router (method check) → ApiController → StatisticService → Models
+     ↑                                                                           ↓
+/health  /metrics                                        Scheduler (aggregation + persistence + metrics)
+                                                                                 ↓
+                                                         FileManager → Zstd Compressor → Disk
 ```
 
 - **Double-Buffering** — the active buffer receives incoming stats (pre-allocated based on previous size) while the inactive buffer is processed during aggregation, swapped atomically via mutex
@@ -223,6 +261,8 @@ HTTP Request → Router (method check) → ApiController → StatisticService (d
 - **Trending Decay** — when views exceed 512, values are halved via bit-shift `(n+1)>>1` and `Ftr` increments, naturally decaying old content
 - **Atomic Snapshot** — `GetSnapshot()` collects all channel data under a single RLock for consistent persistence
 - **Atomic Persistence** — writes to a temp file, syncs to disk, then renames for crash safety
+- **Two-Mux Routing** — outer mux handles `/health` and `/metrics` (infrastructure); inner mux handles API routes wrapped with metrics middleware
+- **Metrics** — Prometheus pull model via `/metrics`; noop provider injected when disabled (zero overhead)
 - **Dependency Injection** — Google Wire for automatic wiring
 
 ## Testing
@@ -246,12 +286,12 @@ go tool cover -func=coverage.out
 | Package | Coverage | Tests |
 |---------|----------|-------|
 | `models/` | 100% | 30 |
-| `services/` | 98% | 18 |
-| `controllers/` | 91% | 19 |
-| `statistic/` | 75% | 25 |
-| `providers/` | 62% | 25 |
-| `internal` (routes) | 100% | 2 |
-| **Total** | | **119** |
+| `services/` | 80% | 18 |
+| `controllers/` | 90% | 31 |
+| `statistic/` | 71% | 25 |
+| `providers/` | 68% | 36 |
+| `internal` (routes) | 17% | 2 |
+| **Total** | | **142** |
 
 All tests run with `-race` enabled to verify thread safety of concurrent data structures (double-buffer, per-channel maps, `sync.RWMutex`-protected models).
 
@@ -264,7 +304,7 @@ All tests run with `-race` enabled to verify thread safety of concurrent data st
 │   ├── controllers/    HTTP handlers (+ tests)
 │   ├── di/             Wire dependency injection
 │   ├── models/         Data models with thread-safe maps (+ tests)
-│   ├── providers/      Config, Logger, Router, Cache providers (+ tests)
+│   ├── providers/      Config, Logger, Router, Cache, Metrics providers (+ tests)
 │   ├── services/       StatisticService — double-buffer core (+ tests)
 │   ├── statistic/      Scheduler, FileManager, Zstd compressor (+ tests)
 │   ├── structures/     Config schema, CLI flags, Route definitions

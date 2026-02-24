@@ -49,7 +49,7 @@ func TestScheduler_Restore_Success(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
 	require.NoError(t, s.Restore())
 
 	data := svc.GetStatistic("default")
@@ -63,7 +63,7 @@ func TestScheduler_Restore_FileNotExist(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig("/nonexistent/file.dat")
 
-	s := NewScheduler(conf, logger, svc, fm)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
 	err := s.Restore()
 	assert.NoError(t, err)
 }
@@ -79,7 +79,7 @@ func TestScheduler_Restore_CorruptedFile(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
 	err := s.Restore()
 	assert.Error(t, err)
 }
@@ -97,7 +97,7 @@ func TestScheduler_Persist_Success(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
 	require.NoError(t, s.Persist())
 
 	_, err := os.Stat(path)
@@ -115,7 +115,7 @@ func TestScheduler_Persist_WriteError(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig("/tmp/test.dat")
 
-	s := NewScheduler(conf, logger, svc, fm)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
 	err := s.Persist()
 	assert.Error(t, err)
 }
@@ -127,7 +127,7 @@ func TestScheduler_StopNilCron(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig("/tmp/test.dat")
 
-	s := NewScheduler(conf, logger, svc, fm)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
 	// Should not panic with nil cron
 	s.Stop()
 }
@@ -142,7 +142,7 @@ func TestScheduler_InitAndStop(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
 	s.Init()
 	// Give the cron a moment to start
 	time.Sleep(50 * time.Millisecond)

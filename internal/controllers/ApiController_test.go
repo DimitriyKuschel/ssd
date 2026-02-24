@@ -43,6 +43,8 @@ func (m *mockService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ m
 }
 func (m *mockService) GetChannels() []string        { return m.channelsList }
 func (m *mockService) GetSnapshot() *models.Storage { return nil }
+func (m *mockService) GetBufferSize() int           { return 0 }
+func (m *mockService) GetRecordCount(_ string) int  { return 0 }
 
 type mockCache struct {
 	data map[string][]byte

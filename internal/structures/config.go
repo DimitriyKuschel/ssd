@@ -27,6 +27,10 @@ type CacheConfig struct {
 	Size    int  `yaml:"size"`
 }
 
+type MetricsConfig struct {
+	Enabled bool `yaml:"enabled"`
+}
+
 type Config struct {
 	AppName     string
 	Debug       bool
@@ -36,4 +40,5 @@ type Config struct {
 	Persistence Persistence     `yaml:"persistence"`
 	Logger      LoggerConfig    `yaml:"logger"`
 	Cache       CacheConfig     `yaml:"cache"`
+	Metrics     MetricsConfig   `yaml:"metrics"`
 }

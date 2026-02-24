@@ -21,6 +21,7 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 	viper.BindEnv("persistence.saveInterval", "SSD_SAVE_INTERVAL")
 	viper.BindEnv("cache.enabled", "SSD_CACHE_ENABLED")
 	viper.BindEnv("cache.size", "SSD_CACHE_SIZE")
+	viper.BindEnv("metrics.enabled", "SSD_METRICS_ENABLED")
 
 	err := viper.ReadInConfig()
 	if err != nil {
