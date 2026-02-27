@@ -1,7 +1,7 @@
 package statistic
 
 import (
-	"encoding/json"
+	json "github.com/goccy/go-json"
 	"os"
 	"ssd/internal/models"
 	"ssd/internal/providers"
@@ -24,12 +24,9 @@ func NewFileManager(compressor interfaces.CompressorInterface, service services.
 }
 
 func (f *FileManager) SaveToFile(fileName string) error {
-	fullStats := models.Storage{
-		TrendStats:    f.service.GetStatistic(),
-		PersonalStats: f.service.GetPersonalStatistic(),
-	}
+	storage := f.service.GetSnapshot()
 
-	jsonData, err := json.Marshal(fullStats)
+	jsonData, err := json.Marshal(storage)
 	if err != nil {
 		return err
 	}
@@ -79,24 +76,41 @@ func (f *FileManager) LoadFromFile(fileName string) error {
 		return err
 	}
 
-	var fullStats models.Storage
-	err = json.Unmarshal(decompressedData, &fullStats)
-	if err != nil || fullStats.TrendStats == nil || fullStats.PersonalStats == nil {
-		f.logger.Warnf(providers.TypeApp, "Inconsistent DB found, try to migrate from old data format")
-		var stats map[int]*models.StatRecord
-		err = json.Unmarshal(decompressedData, &stats)
-		if err != nil {
-			f.logger.Warnf(providers.TypeApp, "Migration failed")
-			return err
+	// Try new format (with channels)
+	var storage models.Storage
+	if err := json.Unmarshal(decompressedData, &storage); err == nil && storage.Channels != nil {
+		for ch, cd := range storage.Channels {
+			if cd.TrendStats == nil {
+				cd.TrendStats = make(map[int]*models.StatRecord)
+			}
+			if cd.PersonalStats == nil {
+				cd.PersonalStats = make(map[string]*models.Statistic)
+			}
+			f.service.PutChannelData(ch, cd.TrendStats, cd.PersonalStats)
 		}
-		f.logger.Warnf(providers.TypeApp, "Migration Successful")
-		f.service.PutStatistic(stats)
-		f.service.PutPersonalStatistic(make(map[string]*models.Statistic))
-
-	} else {
-		f.service.PutStatistic(fullStats.TrendStats)
-		f.service.PutPersonalStatistic(fullStats.PersonalStats)
+		return nil
 	}
+
+	// Try old format v2 (trend_stats + personal_stats at top level)
+	f.logger.Warnf(providers.TypeApp, "Inconsistent DB found, try to migrate from old data format")
+	var oldStorage struct {
+		TrendStats    map[int]*models.StatRecord   `json:"trend_stats"`
+		PersonalStats map[string]*models.Statistic `json:"personal_stats"`
+	}
+	if err := json.Unmarshal(decompressedData, &oldStorage); err == nil && oldStorage.TrendStats != nil && oldStorage.PersonalStats != nil {
+		f.logger.Warnf(providers.TypeApp, "Migration from v2 format successful")
+		f.service.PutChannelData(services.DefaultChannel, oldStorage.TrendStats, oldStorage.PersonalStats)
+		return nil
+	}
+
+	// Try old format v1 (just map[int]*StatRecord)
+	var stats map[int]*models.StatRecord
+	if err := json.Unmarshal(decompressedData, &stats); err != nil {
+		f.logger.Warnf(providers.TypeApp, "Migration failed")
+		return err
+	}
+	f.logger.Warnf(providers.TypeApp, "Migration from v1 format successful")
+	f.service.PutChannelData(services.DefaultChannel, stats, make(map[string]*models.Statistic))
 
 	return nil
 }

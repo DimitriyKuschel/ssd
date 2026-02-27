@@ -11,7 +11,7 @@ import (
 const (
 	AppName      = "SimpleStatisticDaemon"
 	APPNameLower = "ssd"
-	Version      = "0.0.1"
+	Version      = "1.2.0"
 )
 
 func main() {

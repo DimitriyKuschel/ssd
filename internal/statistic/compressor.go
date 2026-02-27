@@ -12,7 +12,7 @@ type ZstdCompression struct {
 }
 
 func (z *ZstdCompression) Compress(val []byte) ([]byte, error) {
-	return z.encoder.EncodeAll(val, make([]byte, 0, len(val))), nil
+	return z.encoder.EncodeAll(val, make([]byte, 0, len(val)/2)), nil
 }
 
 func (z *ZstdCompression) Decompress(val []byte) ([]byte, error) {

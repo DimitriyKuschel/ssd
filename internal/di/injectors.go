@@ -18,12 +18,15 @@ func InitApp(cfg *structures.CliFlags) (*internal.App, error) {
 	wire.Build(
 		providers.NewConfigProvider,
 		providers.NewLogProvider,
+		providers.NewMetricsProvider,
+		providers.NewInstrumentedCacheProvider,
 
 		statistic.NewZstdCompressor,
 		services.NewStatisticService,
 		statistic.NewFileManager,
 		statistic.NewScheduler,
 		controllers.NewApiController,
+		controllers.NewHealthController,
 		internal.InitRoutes,
 		internal.NewApp,
 	)

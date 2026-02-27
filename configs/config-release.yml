@@ -7,6 +7,11 @@ webServer:
 persistence:
   filePath: "/etc/ssd/data.bin"
   saveInterval: 600s
+cache:
+  enabled: true
+  size: 32
+metrics:
+  enabled: true
 logger:
   level: "info"
   mode: 0640

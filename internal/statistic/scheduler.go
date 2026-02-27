@@ -7,6 +7,7 @@ import (
 	"ssd/internal/statistic/interfaces"
 	"ssd/internal/structures"
 	"sync"
+	"time"
 )
 
 type Scheduler struct {
@@ -14,6 +15,7 @@ type Scheduler struct {
 	logger      providers.Logger
 	service     services.StatisticServiceInterface
 	fileManager *FileManager
+	metrics     providers.MetricsProviderInterface
 	cron        *gron.Cron
 	opsMu       sync.Mutex
 }
@@ -27,7 +29,9 @@ func (s *Scheduler) Init() {
 		s.opsMu.Lock()
 		defer s.opsMu.Unlock()
 
+		start := time.Now()
 		err := s.fileManager.SaveToFile(s.config.Persistence.FilePath)
+		s.metrics.ObservePersistenceDuration(time.Since(start))
 		if err != nil {
 			s.logger.Errorf(providers.TypeApp, "Error while persisting data: %s", err)
 			return
@@ -41,6 +45,9 @@ func (s *Scheduler) Init() {
 
 		s.logger.Infof(providers.TypeApp, "Aggregate statistic...")
 		s.service.AggregateStats()
+		for _, ch := range s.service.GetChannels() {
+			s.metrics.SetRecordsTotal(ch, s.service.GetRecordCount(ch))
+		}
 		s.logger.Infof(providers.TypeApp, "Statistic aggregated")
 	})
 
@@ -74,11 +81,12 @@ func (s *Scheduler) Persist() error {
 	return nil
 }
 
-func NewScheduler(config *structures.Config, logger providers.Logger, service services.StatisticServiceInterface, fileManager *FileManager) interfaces.SchedulerInterface {
+func NewScheduler(config *structures.Config, logger providers.Logger, service services.StatisticServiceInterface, fileManager *FileManager, metrics providers.MetricsProviderInterface) interfaces.SchedulerInterface {
 	return &Scheduler{
 		config:      config,
 		logger:      logger,
 		service:     service,
 		fileManager: fileManager,
+		metrics:     metrics,
 	}
 }

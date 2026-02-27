@@ -1,0 +1,16 @@
+pidFile: "/tmp/ssd-loadtest/ssd.pid"
+statistic:
+  interval: 1s
+webServer:
+  host: "127.0.0.1"
+  port: 18090
+persistence:
+  filePath: "/tmp/ssd-loadtest/data.bin"
+  saveInterval: 10s
+cache:
+  enabled: false
+  size: 0
+logger:
+  level: "warn"
+  mode: 0640
+  dir: "/tmp/ssd-loadtest/logs"
