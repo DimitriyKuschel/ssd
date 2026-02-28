@@ -18,6 +18,7 @@ import (
 
 type App struct {
 	WebServer *http.Server
+	logger    providers.Logger
 }
 
 func NewApp(apiController *controllers.ApiController, healthController *controllers.HealthController, scheduler interfaces.SchedulerInterface, conf *structures.Config, logger providers.Logger, router providers.RouterProviderInterface, metrics providers.MetricsProviderInterface) (*App, error) {
@@ -52,6 +53,7 @@ func NewApp(apiController *controllers.ApiController, healthController *controll
 			WriteTimeout: 10 * time.Second,
 			IdleTimeout:  60 * time.Second,
 		},
+		logger: logger,
 	}
 
 	scheduler.Init()
@@ -74,6 +76,7 @@ func NewApp(apiController *controllers.ApiController, healthController *controll
 		return nil, fmt.Errorf("server error: %w", err)
 	}
 
+	signal.Stop(stop)
 	scheduler.Stop()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -86,6 +89,10 @@ func NewApp(apiController *controllers.ApiController, healthController *controll
 	if err != nil {
 		return nil, err
 	}
+
+	scheduler.Close()
 	logger.Infof(providers.TypeApp, "gracefully stopped")
+	logger.Close()
+
 	return app, nil
 }
