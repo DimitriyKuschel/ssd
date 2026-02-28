@@ -21,6 +21,7 @@ func defaultStatConfig() *structures.Config {
 			MaxChannels:     1000,
 			MaxRecords:      -1,
 			EvictionPercent: 10,
+			MaxRecordsPerFP: -1,
 		},
 	}
 }

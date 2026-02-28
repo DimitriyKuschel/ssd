@@ -23,6 +23,8 @@ type StatisticConfig struct {
 	MaxChannels     int           `yaml:"maxChannels"`
 	MaxRecords      int           `yaml:"maxRecords"`
 	EvictionPercent int           `yaml:"evictionPercent"`
+	MaxRecordsPerFP int           `yaml:"maxRecordsPerFingerprint"`
+	FingerprintTTL  time.Duration `yaml:"fingerprintTTL"`
 }
 
 type CacheConfig struct {

@@ -18,6 +18,8 @@ func testConfig() *structures.Config {
 			MaxChannels:     1000,
 			MaxRecords:      -1,
 			EvictionPercent: 10,
+			MaxRecordsPerFP: -1,
+			FingerprintTTL:  0,
 		},
 	}
 }

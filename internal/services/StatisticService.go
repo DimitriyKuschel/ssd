@@ -5,6 +5,7 @@ import (
 	"ssd/internal/models"
 	"ssd/internal/structures"
 	"sync"
+	"time"
 )
 
 const DefaultChannel = "default"
@@ -24,7 +25,7 @@ type StatisticServiceInterface interface {
 
 type channelData struct {
 	stats         *models.StatStore
-	personalStats *models.PersonalStats
+	personalStats *models.PersonalStatStore
 }
 
 type StatisticService struct {
@@ -38,6 +39,8 @@ type StatisticService struct {
 	maxChannels     int
 	maxRecords      int
 	evictionPercent int
+	maxRecordsPerFP int
+	fingerprintTTL  time.Duration
 }
 
 func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
@@ -59,10 +62,8 @@ func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
 		return nil
 	}
 	ch := &channelData{
-		stats: models.NewStatStore(ss.maxRecords, ss.evictionPercent),
-		personalStats: &models.PersonalStats{
-			Data: make(map[string]*models.Statistic),
-		},
+		stats:         models.NewStatStore(ss.maxRecords, ss.evictionPercent),
+		personalStats: models.NewPersonalStatStore(name, 0, ss.maxRecordsPerFP, ss.evictionPercent, ss.fingerprintTTL, nil),
 	}
 	ss.channels[name] = ch
 	ss.rebuildChannelCache()
@@ -139,7 +140,7 @@ func (ss *StatisticService) GetByFingerprint(channel, fp string) map[int]*models
 	ss.chMu.RUnlock()
 	if ok {
 		if val, ok := ch.personalStats.Get(fp); ok {
-			return val.GetData()
+			return val.Data
 		}
 	}
 	return nil
@@ -206,6 +207,10 @@ func NewStatisticService(config *structures.Config) StatisticServiceInterface {
 	if evictionPercent <= 0 {
 		evictionPercent = 10
 	}
+	maxRecordsPerFP := config.Statistic.MaxRecordsPerFP
+	if maxRecordsPerFP == 0 {
+		maxRecordsPerFP = -1
+	}
 
 	ss := &StatisticService{
 		activeIdx:       0,
@@ -213,6 +218,8 @@ func NewStatisticService(config *structures.Config) StatisticServiceInterface {
 		maxChannels:     maxChannels,
 		maxRecords:      maxRecords,
 		evictionPercent: evictionPercent,
+		maxRecordsPerFP: maxRecordsPerFP,
+		fingerprintTTL:  config.Statistic.FingerprintTTL,
 	}
 	ss.getOrCreateChannel(DefaultChannel)
 	return ss
