@@ -62,6 +62,10 @@ func (f *FileManager) SaveToFile(fileName string) error {
 	return os.Rename(tmpFile, fileName)
 }
 
+func (f *FileManager) Close() {
+	f.compressor.Close()
+}
+
 func (f *FileManager) LoadFromFile(fileName string) error {
 	data, err := os.ReadFile(fileName)
 	if err != nil {

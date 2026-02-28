@@ -19,6 +19,11 @@ func (z *ZstdCompression) Decompress(val []byte) ([]byte, error) {
 	return z.decoder.DecodeAll(val, nil)
 }
 
+func (z *ZstdCompression) Close() {
+	z.encoder.Close()
+	z.decoder.Close()
+}
+
 func NewZstdCompressor() (interfaces.CompressorInterface, error) {
 	encoder, err := zstd.NewWriter(nil)
 	if err != nil {

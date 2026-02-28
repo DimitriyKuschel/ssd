@@ -1,7 +1,6 @@
 package statistic
 
 import (
-	"github.com/roylee0704/gron"
 	"ssd/internal/providers"
 	"ssd/internal/services"
 	"ssd/internal/statistic/interfaces"
@@ -16,48 +15,69 @@ type Scheduler struct {
 	service     services.StatisticServiceInterface
 	fileManager *FileManager
 	metrics     providers.MetricsProviderInterface
-	cron        *gron.Cron
 	opsMu       sync.Mutex
+	stopCh      chan struct{}
 }
 
 func (s *Scheduler) Init() {
-	s.cron = gron.New()
-	interval := s.config.Persistence.SaveInterval
-	statisticInterval := s.config.Statistic.Interval
+	s.stopCh = make(chan struct{})
 
-	s.cron.AddFunc(gron.Every(interval), func() {
-		s.opsMu.Lock()
-		defer s.opsMu.Unlock()
+	persistInterval := s.config.Persistence.SaveInterval
+	aggregateInterval := s.config.Statistic.Interval
 
-		start := time.Now()
-		err := s.fileManager.SaveToFile(s.config.Persistence.FilePath)
-		s.metrics.ObservePersistenceDuration(time.Since(start))
-		if err != nil {
-			s.logger.Errorf(providers.TypeApp, "Error while persisting data: %s", err)
-			return
+	go func() {
+		persistTicker := time.NewTicker(persistInterval)
+		aggregateTicker := time.NewTicker(aggregateInterval)
+		defer persistTicker.Stop()
+		defer aggregateTicker.Stop()
+
+		for {
+			select {
+			case <-persistTicker.C:
+				s.doPersist()
+			case <-aggregateTicker.C:
+				s.doAggregate()
+			case <-s.stopCh:
+				return
+			}
 		}
-		s.logger.Infof(providers.TypeApp, "Persisted data to file %s", s.config.Persistence.FilePath)
-	})
+	}()
+}
 
-	s.cron.AddFunc(gron.Every(statisticInterval), func() {
-		s.opsMu.Lock()
-		defer s.opsMu.Unlock()
+func (s *Scheduler) doPersist() {
+	s.opsMu.Lock()
+	defer s.opsMu.Unlock()
 
-		s.logger.Infof(providers.TypeApp, "Aggregate statistic...")
-		s.service.AggregateStats()
-		for _, ch := range s.service.GetChannels() {
-			s.metrics.SetRecordsTotal(ch, s.service.GetRecordCount(ch))
-		}
-		s.logger.Infof(providers.TypeApp, "Statistic aggregated")
-	})
+	start := time.Now()
+	err := s.fileManager.SaveToFile(s.config.Persistence.FilePath)
+	s.metrics.ObservePersistenceDuration(time.Since(start))
+	if err != nil {
+		s.logger.Errorf(providers.TypeApp, "Error while persisting data: %s", err)
+		return
+	}
+	s.logger.Infof(providers.TypeApp, "Persisted data to file %s", s.config.Persistence.FilePath)
+}
 
-	s.cron.Start()
+func (s *Scheduler) doAggregate() {
+	s.opsMu.Lock()
+	defer s.opsMu.Unlock()
+
+	s.logger.Infof(providers.TypeApp, "Aggregate statistic...")
+	s.service.AggregateStats()
+	for _, ch := range s.service.GetChannels() {
+		s.metrics.SetRecordsTotal(ch, s.service.GetRecordCount(ch))
+	}
+	s.logger.Infof(providers.TypeApp, "Statistic aggregated")
 }
 
 func (s *Scheduler) Stop() {
-	if s.cron != nil {
-		s.cron.Stop()
+	if s.stopCh != nil {
+		close(s.stopCh)
 	}
+}
+
+func (s *Scheduler) Close() {
+	s.fileManager.Close()
 }
 
 func (s *Scheduler) Restore() error {

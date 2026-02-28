@@ -224,3 +224,5 @@ func (m *MockCompressor) Decompress(val []byte) ([]byte, error) {
 	copy(out, val)
 	return out, nil
 }
+
+func (m *MockCompressor) Close() {}
