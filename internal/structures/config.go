@@ -19,7 +19,10 @@ type LoggerConfig struct {
 }
 
 type StatisticConfig struct {
-	Interval time.Duration `yaml:"interval" validate:"required|min:1"`
+	Interval        time.Duration `yaml:"interval" validate:"required|min:1"`
+	MaxChannels     int           `yaml:"maxChannels"`
+	MaxRecords      int           `yaml:"maxRecords"`
+	EvictionPercent int           `yaml:"evictionPercent"`
 }
 
 type CacheConfig struct {

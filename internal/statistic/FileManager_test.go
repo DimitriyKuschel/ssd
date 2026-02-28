@@ -7,12 +7,23 @@ import (
 	"path/filepath"
 	"ssd/internal/models"
 	"ssd/internal/services"
+	"ssd/internal/structures"
 	"ssd/internal/testutil"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func defaultStatConfig() *structures.Config {
+	return &structures.Config{
+		Statistic: structures.StatisticConfig{
+			MaxChannels:     1000,
+			MaxRecords:      -1,
+			EvictionPercent: 10,
+		},
+	}
+}
 
 func newTestFileManager(compressor *testutil.MockCompressor) (*FileManager, *testutil.MockStatisticService) {
 	svc := &testutil.MockStatisticService{}
@@ -25,7 +36,7 @@ func TestFileManager_SaveToFile_CreatesFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "test.dat")
 
-	svc := services.NewStatisticService()
+	svc := services.NewStatisticService(defaultStatConfig())
 	svc.AddStats(&models.InputStats{Views: []string{"1"}, Channel: "default"})
 	svc.AggregateStats()
 
@@ -48,7 +59,7 @@ func TestFileManager_SaveToFile_AtomicWrite(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "data.dat")
 
-	svc := services.NewStatisticService()
+	svc := services.NewStatisticService(defaultStatConfig())
 	comp := &testutil.MockCompressor{}
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
@@ -151,7 +162,7 @@ func TestFileManager_CompressError(t *testing.T) {
 		},
 	}
 
-	svc := services.NewStatisticService()
+	svc := services.NewStatisticService(defaultStatConfig())
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
 
@@ -183,7 +194,7 @@ func TestFileManager_Roundtrip(t *testing.T) {
 	path := filepath.Join(dir, "roundtrip.dat")
 
 	// Save with real service
-	svc := services.NewStatisticService()
+	svc := services.NewStatisticService(defaultStatConfig())
 	svc.AddStats(&models.InputStats{
 		Fingerprint: "fp1",
 		Views:       []string{"1", "2"},
@@ -203,7 +214,7 @@ func TestFileManager_Roundtrip(t *testing.T) {
 	require.NoError(t, fm.SaveToFile(path))
 
 	// Load into new service
-	svc2 := services.NewStatisticService()
+	svc2 := services.NewStatisticService(defaultStatConfig())
 	fm2 := NewFileManager(comp, svc2, logger)
 	require.NoError(t, fm2.LoadFromFile(path))
 
@@ -230,7 +241,7 @@ func TestFileManager_V3NilFields(t *testing.T) {
 	jsonData, _ := json.Marshal(storage)
 	require.NoError(t, os.WriteFile(path, jsonData, 0644))
 
-	svc := services.NewStatisticService()
+	svc := services.NewStatisticService(defaultStatConfig())
 	comp := &testutil.MockCompressor{}
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
@@ -265,7 +276,7 @@ func TestFileManager_MultipleChannels(t *testing.T) {
 	jsonData, _ := json.Marshal(storage)
 	require.NoError(t, os.WriteFile(path, jsonData, 0644))
 
-	svc := services.NewStatisticService()
+	svc := services.NewStatisticService(defaultStatConfig())
 	comp := &testutil.MockCompressor{}
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)

@@ -16,6 +16,10 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 	viper.SetConfigName(strings.TrimSuffix(filename, filepath.Ext(filename)))
 	viper.SetConfigType("yaml")
 
+	viper.SetDefault("statistic.maxChannels", 1000)
+	viper.SetDefault("statistic.maxRecords", -1)
+	viper.SetDefault("statistic.evictionPercent", 10)
+
 	viper.BindEnv("logger.level", "SSD_LOG_LEVEL")
 	viper.BindEnv("statistic.interval", "SSD_AGGREGATION_INTERVAL")
 	viper.BindEnv("persistence.saveInterval", "SSD_SAVE_INTERVAL")

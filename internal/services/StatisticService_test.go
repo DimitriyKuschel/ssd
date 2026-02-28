@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"ssd/internal/models"
+	"ssd/internal/structures"
 	"sync"
 	"testing"
 
@@ -11,8 +12,18 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func testConfig() *structures.Config {
+	return &structures.Config{
+		Statistic: structures.StatisticConfig{
+			MaxChannels:     1000,
+			MaxRecords:      -1,
+			EvictionPercent: 10,
+		},
+	}
+}
+
 func newService() *StatisticService {
-	return NewStatisticService().(*StatisticService)
+	return NewStatisticService(testConfig()).(*StatisticService)
 }
 
 func TestNewStatisticService_DefaultChannel(t *testing.T) {
@@ -163,11 +174,11 @@ func TestGetChannels_Sorted(t *testing.T) {
 func TestMaxChannels(t *testing.T) {
 	ss := newService()
 	// Default channel is already created, so we can create maxChannels-1 more
-	for i := 0; i < maxChannels-1; i++ {
+	for i := 0; i < ss.maxChannels-1; i++ {
 		ch := ss.getOrCreateChannel(fmt.Sprintf("ch%d", i))
 		require.NotNil(t, ch)
 	}
-	assert.Len(t, ss.channels, maxChannels)
+	assert.Len(t, ss.channels, ss.maxChannels)
 
 	// Next one should return nil
 	ch := ss.getOrCreateChannel("overflow")
@@ -176,7 +187,7 @@ func TestMaxChannels(t *testing.T) {
 
 func TestMaxChannels_AggregateSkipsOverflow(t *testing.T) {
 	ss := newService()
-	for i := 0; i < maxChannels-1; i++ {
+	for i := 0; i < ss.maxChannels-1; i++ {
 		ss.getOrCreateChannel(fmt.Sprintf("ch%d", i))
 	}
 
@@ -226,4 +237,30 @@ func TestConcurrent_AddAndAggregate(t *testing.T) {
 	}
 
 	wg.Wait()
+}
+
+func TestGetSnapshot(t *testing.T) {
+	ss := newService()
+	ss.AddStats(&models.InputStats{Views: []string{"1"}, Clicks: []string{"1"}, Channel: DefaultChannel})
+	ss.AggregateStats()
+
+	snapshot := ss.GetSnapshot()
+	require.NotNil(t, snapshot)
+	require.Contains(t, snapshot.Channels, DefaultChannel)
+	assert.Equal(t, 1, snapshot.Channels[DefaultChannel].TrendStats[1].Views)
+}
+
+func TestGetBufferSize(t *testing.T) {
+	ss := newService()
+	assert.Equal(t, 0, ss.GetBufferSize())
+	ss.AddStats(&models.InputStats{Views: []string{"1"}})
+	assert.Equal(t, 1, ss.GetBufferSize())
+}
+
+func TestGetRecordCount(t *testing.T) {
+	ss := newService()
+	assert.Equal(t, 0, ss.GetRecordCount(DefaultChannel))
+	ss.AddStats(&models.InputStats{Views: []string{"1", "2", "3"}, Channel: DefaultChannel})
+	ss.AggregateStats()
+	assert.Equal(t, 3, ss.GetRecordCount(DefaultChannel))
 }

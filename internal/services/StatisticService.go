@@ -3,11 +3,11 @@ package services
 import (
 	"sort"
 	"ssd/internal/models"
+	"ssd/internal/structures"
 	"sync"
 )
 
 const DefaultChannel = "default"
-const maxChannels = 1000
 
 type StatisticServiceInterface interface {
 	AddStats(data *models.InputStats)
@@ -23,18 +23,21 @@ type StatisticServiceInterface interface {
 }
 
 type channelData struct {
-	statistic     *models.Statistic
+	stats         *models.StatStore
 	personalStats *models.PersonalStats
 }
 
 type StatisticService struct {
-	mu             sync.Mutex
-	activeIdx      int
-	buffers        [2][]*models.InputStats
-	prevBufSize    int
-	chMu           sync.RWMutex
-	channels       map[string]*channelData
-	cachedChannels []string
+	mu              sync.Mutex
+	activeIdx       int
+	buffers         [2][]*models.InputStats
+	prevBufSize     int
+	chMu            sync.RWMutex
+	channels        map[string]*channelData
+	cachedChannels  []string
+	maxChannels     int
+	maxRecords      int
+	evictionPercent int
 }
 
 func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
@@ -52,13 +55,11 @@ func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
 	if ch, ok := ss.channels[name]; ok {
 		return ch
 	}
-	if len(ss.channels) >= maxChannels {
+	if ss.maxChannels >= 0 && len(ss.channels) >= ss.maxChannels {
 		return nil
 	}
 	ch := &channelData{
-		statistic: &models.Statistic{
-			Data: make(map[int]*models.StatRecord),
-		},
+		stats: models.NewStatStore(ss.maxRecords, ss.evictionPercent),
 		personalStats: &models.PersonalStats{
 			Data: make(map[string]*models.Statistic),
 		},
@@ -107,7 +108,7 @@ func (ss *StatisticService) AggregateStats() {
 		if ch == nil {
 			continue
 		}
-		ch.statistic.IncStats(v)
+		ch.stats.IncStats(v)
 		ch.personalStats.IncStats(v)
 	}
 }
@@ -117,7 +118,7 @@ func (ss *StatisticService) GetStatistic(channel string) map[int]*models.StatRec
 	ch, ok := ss.channels[channel]
 	ss.chMu.RUnlock()
 	if ok {
-		return ch.statistic.GetData()
+		return ch.stats.GetData()
 	}
 	return nil
 }
@@ -149,7 +150,7 @@ func (ss *StatisticService) PutChannelData(channel string, trend map[int]*models
 	if ch == nil {
 		return
 	}
-	ch.statistic.PutData(trend)
+	ch.stats.PutData(trend)
 	ch.personalStats.PutData(personal)
 }
 
@@ -168,7 +169,7 @@ func (ss *StatisticService) GetSnapshot() *models.Storage {
 	}
 	for name, ch := range ss.channels {
 		storage.Channels[name] = &models.ChannelData{
-			TrendStats:    ch.statistic.GetData(),
+			TrendStats:    ch.stats.GetData(),
 			PersonalStats: ch.personalStats.GetData(),
 		}
 	}
@@ -187,15 +188,31 @@ func (ss *StatisticService) GetRecordCount(channel string) int {
 	ch, ok := ss.channels[channel]
 	ss.chMu.RUnlock()
 	if ok {
-		return ch.statistic.Len()
+		return ch.stats.Len()
 	}
 	return 0
 }
 
-func NewStatisticService() StatisticServiceInterface {
+func NewStatisticService(config *structures.Config) StatisticServiceInterface {
+	maxChannels := config.Statistic.MaxChannels
+	if maxChannels == 0 {
+		maxChannels = 1000
+	}
+	maxRecords := config.Statistic.MaxRecords
+	if maxRecords == 0 {
+		maxRecords = -1
+	}
+	evictionPercent := config.Statistic.EvictionPercent
+	if evictionPercent <= 0 {
+		evictionPercent = 10
+	}
+
 	ss := &StatisticService{
-		activeIdx: 0,
-		channels:  make(map[string]*channelData),
+		activeIdx:       0,
+		channels:        make(map[string]*channelData),
+		maxChannels:     maxChannels,
+		maxRecords:      maxRecords,
+		evictionPercent: evictionPercent,
 	}
 	ss.getOrCreateChannel(DefaultChannel)
 	return ss
