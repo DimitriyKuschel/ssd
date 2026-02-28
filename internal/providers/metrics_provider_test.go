@@ -21,8 +21,10 @@ func (m *metricsTestService) GetPersonalStatistic(_ string) map[string]*models.S
 func (m *metricsTestService) GetByFingerprint(_, _ string) map[int]*models.StatRecord    { return nil }
 func (m *metricsTestService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {
 }
+func (m *metricsTestService) PutChannelDataV4(_ string, _ map[int]*models.StatRecord, _ map[string]*models.FingerprintPersistence) {
+}
 func (m *metricsTestService) GetChannels() []string                        { return []string{"default"} }
-func (m *metricsTestService) GetSnapshot() *models.Storage                 { return nil }
+func (m *metricsTestService) GetSnapshot() *models.StorageV4               { return nil }
 func (m *metricsTestService) GetBufferSize() int                           { return 5 }
 func (m *metricsTestService) GetRecordCount(_ string) int                  { return 0 }
 func (m *metricsTestService) SetColdStorage(_ models.ColdStorageInterface) {}

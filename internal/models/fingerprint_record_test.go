@@ -3,6 +3,7 @@ package models
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -260,4 +261,44 @@ func TestFR_GetData_EmptyRecord(t *testing.T) {
 	data := fr.GetData()
 	assert.NotNil(t, data)
 	assert.Empty(t, data)
+}
+
+func TestFR_GetPersistenceData_ReturnsDataAndLastSeen(t *testing.T) {
+	fr := newFR()
+	fr.IncStats(&InputStats{Views: []string{"1", "2"}, Clicks: []string{"1"}}, -1, 10)
+
+	data, lastSeen := fr.GetPersistenceData()
+
+	require.Len(t, data, 2)
+	assert.Equal(t, 1, data[1].Views)
+	assert.Equal(t, 1, data[1].Clicks)
+	assert.Equal(t, 1, data[2].Views)
+	assert.False(t, lastSeen.IsZero())
+	assert.WithinDuration(t, time.Now(), lastSeen, 1*time.Second)
+}
+
+func TestFR_GetPersistenceData_MatchesGetData(t *testing.T) {
+	fr := newFR()
+	fr.IncStats(&InputStats{Views: []string{"1"}}, -1, 10)
+	fr.IncStats(&InputStats{Views: []string{"1"}, Clicks: []string{"1", "3"}}, -1, 10)
+
+	dataOnly := fr.GetData()
+	dataPersist, _ := fr.GetPersistenceData()
+
+	require.Equal(t, len(dataOnly), len(dataPersist))
+	for id, rec := range dataOnly {
+		pr, ok := dataPersist[id]
+		require.True(t, ok)
+		assert.Equal(t, rec.Views, pr.Views)
+		assert.Equal(t, rec.Clicks, pr.Clicks)
+		assert.Equal(t, rec.Ftr, pr.Ftr)
+	}
+}
+
+func TestFR_GetPersistenceData_EmptyRecord(t *testing.T) {
+	fr := newFR()
+	data, lastSeen := fr.GetPersistenceData()
+	assert.NotNil(t, data)
+	assert.Empty(t, data)
+	assert.False(t, lastSeen.IsZero())
 }

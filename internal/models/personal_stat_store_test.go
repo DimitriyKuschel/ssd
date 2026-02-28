@@ -247,6 +247,91 @@ func TestPSS_ConcurrentAccess(t *testing.T) {
 	assert.LessOrEqual(t, ps.Len(), 10)
 }
 
+func TestPSS_PutPersistenceData_PreservesLastSeen(t *testing.T) {
+	ps := newPSS()
+	pastTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	ps.PutPersistenceData(map[string]*FingerprintPersistence{
+		"fp1": {
+			Data:     map[int]*StatRecord{1: {Views: 10}},
+			LastSeen: pastTime,
+		},
+	})
+
+	assert.Equal(t, 1, ps.Len())
+	val, ok := ps.Get("fp1")
+	require.True(t, ok)
+	assert.Equal(t, 10, val.Data[1].Views)
+
+	// Verify lastSeen was preserved
+	ps.mu.RLock()
+	rec := ps.fingerprints["fp1"]
+	ps.mu.RUnlock()
+	assert.Equal(t, pastTime.Unix(), rec.LastSeen().Unix())
+}
+
+func TestPSS_PutPersistenceData_ZeroLastSeen_DefaultsToNow(t *testing.T) {
+	ps := newPSS()
+	before := time.Now()
+
+	ps.PutPersistenceData(map[string]*FingerprintPersistence{
+		"fp1": {
+			Data:     map[int]*StatRecord{1: {Views: 5}},
+			LastSeen: time.Time{}, // zero
+		},
+	})
+
+	after := time.Now()
+
+	ps.mu.RLock()
+	rec := ps.fingerprints["fp1"]
+	ps.mu.RUnlock()
+	ls := rec.LastSeen()
+	assert.True(t, !ls.Before(before) && !ls.After(after),
+		"zero LastSeen should fall back to time.Now()")
+}
+
+func TestPSS_PutPersistenceData_NilEntry(t *testing.T) {
+	ps := newPSS()
+	ps.PutPersistenceData(map[string]*FingerprintPersistence{
+		"fp1": nil,
+		"fp2": {Data: map[int]*StatRecord{1: {Views: 1}}, LastSeen: time.Now()},
+	})
+	assert.Equal(t, 1, ps.Len())
+	_, ok := ps.Get("fp1")
+	assert.False(t, ok)
+}
+
+func TestPSS_PersistenceData_Roundtrip(t *testing.T) {
+	ps := newPSS()
+	ps.IncStats(&InputStats{Fingerprint: "fp1", Views: []string{"1", "2"}, Clicks: []string{"1"}})
+	ps.IncStats(&InputStats{Fingerprint: "fp2", Views: []string{"3"}})
+
+	persisted := ps.GetPersistenceData()
+	require.Len(t, persisted, 2)
+
+	// Load into a new store
+	ps2 := newPSS()
+	ps2.PutPersistenceData(persisted)
+
+	// Verify data matches
+	for fp, fpData := range persisted {
+		val, ok := ps2.Get(fp)
+		require.True(t, ok, "fingerprint %s should exist", fp)
+		for id, rec := range fpData.Data {
+			assert.Equal(t, rec.Views, val.Data[id].Views)
+			assert.Equal(t, rec.Clicks, val.Data[id].Clicks)
+		}
+	}
+
+	// Verify lastSeen was preserved
+	persisted2 := ps2.GetPersistenceData()
+	for fp, fpData := range persisted {
+		assert.Equal(t, fpData.LastSeen.Unix(), persisted2[fp].LastSeen.Unix(),
+			"lastSeen should be preserved for %s", fp)
+	}
+}
+
 // mockColdStorage is a test-only implementation of ColdStorageInterface.
 type mockColdStorage struct {
 	mu          sync.Mutex

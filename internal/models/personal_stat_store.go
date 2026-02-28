@@ -169,6 +169,40 @@ func (ps *PersonalStatStore) PutData(stats map[string]*Statistic) {
 	}
 }
 
+// GetPersistenceData returns V4 persistence data with lastSeen per fingerprint.
+func (ps *PersonalStatStore) GetPersistenceData() map[string]*FingerprintPersistence {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	result := make(map[string]*FingerprintPersistence, len(ps.fingerprints))
+	for fp, rec := range ps.fingerprints {
+		data, lastSeen := rec.GetPersistenceData()
+		result[fp] = &FingerprintPersistence{
+			Data:     data,
+			LastSeen: lastSeen,
+		}
+	}
+	return result
+}
+
+// PutPersistenceData loads V4 format data, preserving lastSeen timestamps.
+func (ps *PersonalStatStore) PutPersistenceData(data map[string]*FingerprintPersistence) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	ps.fingerprints = make(map[string]*FingerprintRecord, len(data))
+	for fp, fpData := range data {
+		if fpData == nil {
+			continue
+		}
+		rec := dataToFingerprintRecord(fpData.Data)
+		if !fpData.LastSeen.IsZero() {
+			rec.lastSeen = fpData.LastSeen
+		}
+		ps.fingerprints[fp] = rec
+	}
+}
+
 // SetColdStorage injects cold storage into this PersonalStatStore.
 func (ps *PersonalStatStore) SetColdStorage(cold ColdStorageInterface) {
 	ps.mu.Lock()

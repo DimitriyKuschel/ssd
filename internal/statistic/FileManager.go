@@ -7,6 +7,7 @@ import (
 	"ssd/internal/providers"
 	"ssd/internal/services"
 	"ssd/internal/statistic/interfaces"
+	"time"
 )
 
 type FileManager struct {
@@ -80,17 +81,31 @@ func (f *FileManager) LoadFromFile(fileName string) error {
 		return err
 	}
 
-	// Try new format (with channels)
-	var storage models.Storage
-	if err := json.Unmarshal(decompressedData, &storage); err == nil && storage.Channels != nil {
-		for ch, cd := range storage.Channels {
+	// Try V4 format (StorageV4 is a JSON superset of V3 Storage)
+	var storageV4 models.StorageV4
+	if err := json.Unmarshal(decompressedData, &storageV4); err == nil && storageV4.Channels != nil {
+		now := time.Now()
+		for ch, cd := range storageV4.Channels {
 			if cd.TrendStats == nil {
 				cd.TrendStats = make(map[int]*models.StatRecord)
 			}
 			if cd.PersonalStats == nil {
-				cd.PersonalStats = make(map[string]*models.Statistic)
+				cd.PersonalStats = make(map[string]*models.FingerprintPersistence)
 			}
-			f.service.PutChannelData(ch, cd.TrendStats, cd.PersonalStats)
+			if storageV4.Version < 4 {
+				// V3 migration: set LastSeen = now for zero-value timestamps
+				migrated := 0
+				for _, fp := range cd.PersonalStats {
+					if fp.LastSeen.IsZero() {
+						fp.LastSeen = now
+						migrated++
+					}
+				}
+				if migrated > 0 {
+					f.logger.Warnf(providers.TypeApp, "Migrating channel %q from V3 to V4: set lastSeen for %d/%d fingerprints", ch, migrated, len(cd.PersonalStats))
+				}
+			}
+			f.service.PutChannelDataV4(ch, cd.TrendStats, cd.PersonalStats)
 		}
 		return nil
 	}

@@ -7,6 +7,7 @@ import (
 	"ssd/internal/structures"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -243,13 +244,48 @@ func TestConcurrent_AddAndAggregate(t *testing.T) {
 
 func TestGetSnapshot(t *testing.T) {
 	ss := newService()
-	ss.AddStats(&models.InputStats{Views: []string{"1"}, Clicks: []string{"1"}, Channel: DefaultChannel})
+	ss.AddStats(&models.InputStats{Views: []string{"1"}, Clicks: []string{"1"}, Fingerprint: "fp1", Channel: DefaultChannel})
 	ss.AggregateStats()
 
 	snapshot := ss.GetSnapshot()
 	require.NotNil(t, snapshot)
+	assert.Equal(t, 4, snapshot.Version)
 	require.Contains(t, snapshot.Channels, DefaultChannel)
 	assert.Equal(t, 1, snapshot.Channels[DefaultChannel].TrendStats[1].Views)
+
+	// PersonalStats should be FingerprintPersistence with lastSeen
+	fp1 := snapshot.Channels[DefaultChannel].PersonalStats["fp1"]
+	require.NotNil(t, fp1)
+	assert.Equal(t, 1, fp1.Data[1].Views)
+	assert.False(t, fp1.LastSeen.IsZero())
+}
+
+func TestPutChannelDataV4(t *testing.T) {
+	ss := newService()
+	pastTime := time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC)
+
+	trend := map[int]*models.StatRecord{1: {Views: 100}}
+	personal := map[string]*models.FingerprintPersistence{
+		"fp1": {
+			Data:     map[int]*models.StatRecord{1: {Views: 50}},
+			LastSeen: pastTime,
+		},
+	}
+	ss.PutChannelDataV4("restored", trend, personal)
+
+	data := ss.GetStatistic("restored")
+	require.NotNil(t, data)
+	assert.Equal(t, 100, data[1].Views)
+
+	pData := ss.GetByFingerprint("restored", "fp1")
+	require.NotNil(t, pData)
+	assert.Equal(t, 50, pData[1].Views)
+
+	// Verify lastSeen was preserved via snapshot
+	snapshot := ss.GetSnapshot()
+	fp1 := snapshot.Channels["restored"].PersonalStats["fp1"]
+	require.NotNil(t, fp1)
+	assert.Equal(t, pastTime.Unix(), fp1.LastSeen.Unix())
 }
 
 func TestGetBufferSize(t *testing.T) {

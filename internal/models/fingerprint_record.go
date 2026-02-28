@@ -165,6 +165,18 @@ func (fr *FingerprintRecord) evictRecords(maxRecords, evictionPercent int) {
 func (fr *FingerprintRecord) GetData() map[int]*StatRecord {
 	fr.mu.Lock()
 	defer fr.mu.Unlock()
+	return fr.buildData()
+}
+
+// GetPersistenceData returns data + lastSeen atomically under a single lock.
+func (fr *FingerprintRecord) GetPersistenceData() (map[int]*StatRecord, time.Time) {
+	fr.mu.Lock()
+	defer fr.mu.Unlock()
+	return fr.buildData(), fr.lastSeen
+}
+
+// buildData reconstructs the full map without locking. Caller must hold fr.mu.
+func (fr *FingerprintRecord) buildData() map[int]*StatRecord {
 	result := make(map[int]*StatRecord, fr.viewed.GetCardinality()+fr.clicked.GetCardinality())
 
 	// Pass 1: viewed bitmap

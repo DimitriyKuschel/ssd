@@ -53,12 +53,19 @@ type MockStatisticService struct {
 	FingerprintData map[string]map[int]*models.StatRecord // key: "channel:fp"
 	ChannelsList    []string
 	PutCalls        []PutChannelCall
+	PutV4Calls      []PutChannelV4Call
 }
 
 type PutChannelCall struct {
 	Channel  string
 	Trend    map[int]*models.StatRecord
 	Personal map[string]*models.Statistic
+}
+
+type PutChannelV4Call struct {
+	Channel  string
+	Trend    map[int]*models.StatRecord
+	Personal map[string]*models.FingerprintPersistence
 }
 
 func (m *MockStatisticService) AddStats(data *models.InputStats) {
@@ -112,11 +119,18 @@ func (m *MockStatisticService) GetChannels() []string {
 	return m.ChannelsList
 }
 
-func (m *MockStatisticService) GetSnapshot() *models.Storage {
+func (m *MockStatisticService) PutChannelDataV4(channel string, trend map[int]*models.StatRecord, personal map[string]*models.FingerprintPersistence) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	return &models.Storage{
-		Channels: make(map[string]*models.ChannelData),
+	m.PutV4Calls = append(m.PutV4Calls, PutChannelV4Call{Channel: channel, Trend: trend, Personal: personal})
+}
+
+func (m *MockStatisticService) GetSnapshot() *models.StorageV4 {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return &models.StorageV4{
+		Version:  4,
+		Channels: make(map[string]*models.ChannelDataV4),
 	}
 }
 

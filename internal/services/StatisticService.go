@@ -17,8 +17,9 @@ type StatisticServiceInterface interface {
 	GetPersonalStatistic(channel string) map[string]*models.Statistic
 	GetByFingerprint(channel, fp string) map[int]*models.StatRecord
 	PutChannelData(channel string, trend map[int]*models.StatRecord, personal map[string]*models.Statistic)
+	PutChannelDataV4(channel string, trend map[int]*models.StatRecord, personal map[string]*models.FingerprintPersistence)
 	GetChannels() []string
-	GetSnapshot() *models.Storage
+	GetSnapshot() *models.StorageV4
 	GetBufferSize() int
 	GetRecordCount(channel string) int
 	SetColdStorage(cold models.ColdStorageInterface)
@@ -164,20 +165,30 @@ func (ss *StatisticService) GetChannels() []string {
 	return ss.cachedChannels
 }
 
-func (ss *StatisticService) GetSnapshot() *models.Storage {
+func (ss *StatisticService) GetSnapshot() *models.StorageV4 {
 	ss.chMu.RLock()
 	defer ss.chMu.RUnlock()
 
-	storage := &models.Storage{
-		Channels: make(map[string]*models.ChannelData, len(ss.channels)),
+	storage := &models.StorageV4{
+		Version:  4,
+		Channels: make(map[string]*models.ChannelDataV4, len(ss.channels)),
 	}
 	for name, ch := range ss.channels {
-		storage.Channels[name] = &models.ChannelData{
+		storage.Channels[name] = &models.ChannelDataV4{
 			TrendStats:    ch.stats.GetData(),
-			PersonalStats: ch.personalStats.GetData(),
+			PersonalStats: ch.personalStats.GetPersistenceData(),
 		}
 	}
 	return storage
+}
+
+func (ss *StatisticService) PutChannelDataV4(channel string, trend map[int]*models.StatRecord, personal map[string]*models.FingerprintPersistence) {
+	ch := ss.getOrCreateChannel(channel)
+	if ch == nil {
+		return
+	}
+	ch.stats.PutData(trend)
+	ch.personalStats.PutPersistenceData(personal)
 }
 
 func (ss *StatisticService) GetBufferSize() int {
