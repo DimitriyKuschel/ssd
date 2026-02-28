@@ -21,6 +21,8 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 	viper.SetDefault("statistic.evictionPercent", 10)
 	viper.SetDefault("statistic.maxRecordsPerFingerprint", -1)
 	viper.SetDefault("statistic.fingerprintTTL", 0)
+	viper.SetDefault("statistic.coldStorageDir", "")
+	viper.SetDefault("statistic.coldTTL", 0)
 
 	viper.BindEnv("logger.level", "SSD_LOG_LEVEL")
 	viper.BindEnv("statistic.interval", "SSD_AGGREGATION_INTERVAL")

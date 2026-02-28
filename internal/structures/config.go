@@ -25,6 +25,8 @@ type StatisticConfig struct {
 	EvictionPercent int           `yaml:"evictionPercent"`
 	MaxRecordsPerFP int           `yaml:"maxRecordsPerFingerprint"`
 	FingerprintTTL  time.Duration `yaml:"fingerprintTTL"`
+	ColdStorageDir  string        `yaml:"coldStorageDir"`
+	ColdTTL         time.Duration `yaml:"coldTTL"`
 }
 
 type CacheConfig struct {

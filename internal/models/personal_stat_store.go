@@ -169,6 +169,13 @@ func (ps *PersonalStatStore) PutData(stats map[string]*Statistic) {
 	}
 }
 
+// SetColdStorage injects cold storage into this PersonalStatStore.
+func (ps *PersonalStatStore) SetColdStorage(cold ColdStorageInterface) {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+	ps.cold = cold
+}
+
 // EvictExpired removes fingerprints that haven't been active for longer than
 // fingerprintTTL. If cold storage is available, data is backed up before removal.
 func (ps *PersonalStatStore) EvictExpired(now time.Time) {

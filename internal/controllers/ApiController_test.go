@@ -41,10 +41,12 @@ func (m *mockService) GetPersonalStatistic(_ string) map[string]*models.Statisti
 func (m *mockService) GetByFingerprint(_, _ string) map[int]*models.StatRecord { return m.fpData }
 func (m *mockService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {
 }
-func (m *mockService) GetChannels() []string        { return m.channelsList }
-func (m *mockService) GetSnapshot() *models.Storage { return nil }
-func (m *mockService) GetBufferSize() int           { return 0 }
-func (m *mockService) GetRecordCount(_ string) int  { return 0 }
+func (m *mockService) GetChannels() []string                        { return m.channelsList }
+func (m *mockService) GetSnapshot() *models.Storage                 { return nil }
+func (m *mockService) GetBufferSize() int                           { return 0 }
+func (m *mockService) GetRecordCount(_ string) int                  { return 0 }
+func (m *mockService) SetColdStorage(_ models.ColdStorageInterface) {}
+func (m *mockService) EvictExpiredFingerprints()                    {}
 
 type mockCache struct {
 	data map[string][]byte

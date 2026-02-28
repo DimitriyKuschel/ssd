@@ -21,10 +21,12 @@ func (m *metricsTestService) GetPersonalStatistic(_ string) map[string]*models.S
 func (m *metricsTestService) GetByFingerprint(_, _ string) map[int]*models.StatRecord    { return nil }
 func (m *metricsTestService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {
 }
-func (m *metricsTestService) GetChannels() []string        { return []string{"default"} }
-func (m *metricsTestService) GetSnapshot() *models.Storage { return nil }
-func (m *metricsTestService) GetBufferSize() int           { return 5 }
-func (m *metricsTestService) GetRecordCount(_ string) int  { return 0 }
+func (m *metricsTestService) GetChannels() []string                        { return []string{"default"} }
+func (m *metricsTestService) GetSnapshot() *models.Storage                 { return nil }
+func (m *metricsTestService) GetBufferSize() int                           { return 5 }
+func (m *metricsTestService) GetRecordCount(_ string) int                  { return 0 }
+func (m *metricsTestService) SetColdStorage(_ models.ColdStorageInterface) {}
+func (m *metricsTestService) EvictExpiredFingerprints()                    {}
 
 func TestNoopMetrics_WhenDisabled(t *testing.T) {
 	conf := &structures.Config{

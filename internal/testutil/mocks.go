@@ -130,6 +130,10 @@ func (m *MockStatisticService) GetRecordCount(_ string) int {
 	return 0
 }
 
+func (m *MockStatisticService) SetColdStorage(_ models.ColdStorageInterface) {}
+
+func (m *MockStatisticService) EvictExpiredFingerprints() {}
+
 // MockCache implements providers.CacheProviderInterface.
 type MockCache struct {
 	mu   sync.Mutex

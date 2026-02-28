@@ -21,6 +21,8 @@ type StatisticServiceInterface interface {
 	GetSnapshot() *models.Storage
 	GetBufferSize() int
 	GetRecordCount(channel string) int
+	SetColdStorage(cold models.ColdStorageInterface)
+	EvictExpiredFingerprints()
 }
 
 type channelData struct {
@@ -41,6 +43,7 @@ type StatisticService struct {
 	evictionPercent int
 	maxRecordsPerFP int
 	fingerprintTTL  time.Duration
+	cold            models.ColdStorageInterface
 }
 
 func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
@@ -63,7 +66,7 @@ func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
 	}
 	ch := &channelData{
 		stats:         models.NewStatStore(ss.maxRecords, ss.evictionPercent),
-		personalStats: models.NewPersonalStatStore(name, 0, ss.maxRecordsPerFP, ss.evictionPercent, ss.fingerprintTTL, nil),
+		personalStats: models.NewPersonalStatStore(name, 0, ss.maxRecordsPerFP, ss.evictionPercent, ss.fingerprintTTL, ss.cold),
 	}
 	ss.channels[name] = ch
 	ss.rebuildChannelCache()
@@ -192,6 +195,26 @@ func (ss *StatisticService) GetRecordCount(channel string) int {
 		return ch.stats.Len()
 	}
 	return 0
+}
+
+// SetColdStorage injects cold storage into the service and all existing channels.
+func (ss *StatisticService) SetColdStorage(cold models.ColdStorageInterface) {
+	ss.chMu.Lock()
+	defer ss.chMu.Unlock()
+	ss.cold = cold
+	for _, ch := range ss.channels {
+		ch.personalStats.SetColdStorage(cold)
+	}
+}
+
+// EvictExpiredFingerprints removes inactive fingerprints from all channels.
+func (ss *StatisticService) EvictExpiredFingerprints() {
+	ss.chMu.RLock()
+	defer ss.chMu.RUnlock()
+	now := time.Now()
+	for _, ch := range ss.channels {
+		ch.personalStats.EvictExpired(now)
+	}
 }
 
 func NewStatisticService(config *structures.Config) StatisticServiceInterface {
