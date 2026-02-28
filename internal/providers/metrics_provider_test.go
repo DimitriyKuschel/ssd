@@ -1,6 +1,7 @@
 package providers
 
 import (
+	"io"
 	"ssd/internal/models"
 	"ssd/internal/structures"
 	"testing"
@@ -29,6 +30,8 @@ func (m *metricsTestService) GetBufferSize() int                           { ret
 func (m *metricsTestService) GetRecordCount(_ string) int                  { return 0 }
 func (m *metricsTestService) SetColdStorage(_ models.ColdStorageInterface) {}
 func (m *metricsTestService) EvictExpiredFingerprints()                    {}
+func (m *metricsTestService) WriteBinarySnapshot(_ io.Writer) error        { return nil }
+func (m *metricsTestService) ReadBinarySnapshot(_ io.Reader) error         { return nil }
 
 func TestNoopMetrics_WhenDisabled(t *testing.T) {
 	conf := &structures.Config{

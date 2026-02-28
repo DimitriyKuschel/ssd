@@ -1,6 +1,7 @@
 package services
 
 import (
+	"bytes"
 	"fmt"
 	"sort"
 	"ssd/internal/models"
@@ -301,4 +302,89 @@ func TestGetRecordCount(t *testing.T) {
 	ss.AddStats(&models.InputStats{Views: []string{"1", "2", "3"}, Channel: DefaultChannel})
 	ss.AggregateStats()
 	assert.Equal(t, 3, ss.GetRecordCount(DefaultChannel))
+}
+
+func TestWriteBinarySnapshot_Roundtrip(t *testing.T) {
+	ss := newService()
+
+	// Add data to multiple channels
+	ss.AddStats(&models.InputStats{
+		Fingerprint: "fp1",
+		Views:       []string{"1", "2"},
+		Clicks:      []string{"1"},
+		Channel:     "default",
+	})
+	ss.AddStats(&models.InputStats{
+		Fingerprint: "fp2",
+		Views:       []string{"3"},
+		Channel:     "news",
+	})
+	ss.AggregateStats()
+
+	// Capture lastSeen before write
+	snap1 := ss.GetSnapshot()
+	fp1LastSeen := snap1.Channels["default"].PersonalStats["fp1"].LastSeen
+
+	// Write binary snapshot
+	var buf bytes.Buffer
+	require.NoError(t, ss.WriteBinarySnapshot(&buf))
+
+	// Read into new service
+	ss2 := newService()
+	require.NoError(t, ss2.ReadBinarySnapshot(bytes.NewReader(buf.Bytes())))
+
+	// Verify channels exist
+	channels := ss2.GetChannels()
+	assert.Contains(t, channels, "default")
+	assert.Contains(t, channels, "news")
+
+	// Verify trend data
+	data := ss2.GetStatistic("default")
+	require.NotNil(t, data)
+	assert.Equal(t, 1, data[1].Views)
+	assert.Equal(t, 1, data[1].Clicks)
+	assert.Equal(t, 1, data[2].Views)
+
+	newsData := ss2.GetStatistic("news")
+	require.NotNil(t, newsData)
+	assert.Equal(t, 1, newsData[3].Views)
+
+	// Verify personal data
+	fpData := ss2.GetByFingerprint("default", "fp1")
+	require.NotNil(t, fpData)
+	assert.Equal(t, 1, fpData[1].Views)
+
+	// Verify lastSeen preserved
+	snap2 := ss2.GetSnapshot()
+	fp1After := snap2.Channels["default"].PersonalStats["fp1"]
+	require.NotNil(t, fp1After)
+	assert.Equal(t, fp1LastSeen.UnixNano(), fp1After.LastSeen.UnixNano())
+}
+
+func TestWriteBinarySnapshot_Empty(t *testing.T) {
+	ss := newService()
+
+	var buf bytes.Buffer
+	require.NoError(t, ss.WriteBinarySnapshot(&buf))
+
+	ss2 := newService()
+	require.NoError(t, ss2.ReadBinarySnapshot(bytes.NewReader(buf.Bytes())))
+
+	data := ss2.GetStatistic("default")
+	assert.Empty(t, data)
+}
+
+func TestReadBinarySnapshot_InvalidMagic(t *testing.T) {
+	ss := newService()
+	err := ss.ReadBinarySnapshot(bytes.NewReader([]byte("XXXX")))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid binary magic")
+}
+
+func TestReadBinarySnapshot_UnsupportedVersion(t *testing.T) {
+	ss := newService()
+	data := []byte{'S', 'S', 'D', '5', 99} // version 99
+	err := ss.ReadBinarySnapshot(bytes.NewReader(data))
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "unsupported binary version")
 }

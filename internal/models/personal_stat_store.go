@@ -1,6 +1,8 @@
 package models
 
 import (
+	"encoding/binary"
+	"io"
 	"math"
 	"sync"
 	"time"
@@ -201,6 +203,52 @@ func (ps *PersonalStatStore) PutPersistenceData(data map[string]*FingerprintPers
 		}
 		ps.fingerprints[fp] = rec
 	}
+}
+
+// WriteBinaryTo writes all fingerprint data in binary format.
+func (ps *PersonalStatStore) WriteBinaryTo(w io.Writer) error {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	if err := binary.Write(w, byteOrder, uint32(len(ps.fingerprints))); err != nil {
+		return err
+	}
+	for name, rec := range ps.fingerprints {
+		if err := writeString(w, name); err != nil {
+			return err
+		}
+		rec.mu.Lock()
+		err := writeFingerprintRecord(w, rec)
+		rec.mu.Unlock()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ReadBinaryFrom reads fingerprint data from binary format.
+func (ps *PersonalStatStore) ReadBinaryFrom(r io.Reader) error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	var count uint32
+	if err := binary.Read(r, byteOrder, &count); err != nil {
+		return err
+	}
+	ps.fingerprints = make(map[string]*FingerprintRecord, count)
+	for i := uint32(0); i < count; i++ {
+		name, err := readString(r)
+		if err != nil {
+			return err
+		}
+		rec, err := readFingerprintRecord(r)
+		if err != nil {
+			return err
+		}
+		ps.fingerprints[name] = rec
+	}
+	return nil
 }
 
 // SetColdStorage injects cold storage into this PersonalStatStore.

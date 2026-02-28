@@ -1,6 +1,9 @@
 package services
 
 import (
+	"encoding/binary"
+	"fmt"
+	"io"
 	"sort"
 	"ssd/internal/models"
 	"ssd/internal/structures"
@@ -20,6 +23,8 @@ type StatisticServiceInterface interface {
 	PutChannelDataV4(channel string, trend map[int]*models.StatRecord, personal map[string]*models.FingerprintPersistence)
 	GetChannels() []string
 	GetSnapshot() *models.StorageV4
+	WriteBinarySnapshot(w io.Writer) error
+	ReadBinarySnapshot(r io.Reader) error
 	GetBufferSize() int
 	GetRecordCount(channel string) int
 	SetColdStorage(cold models.ColdStorageInterface)
@@ -189,6 +194,87 @@ func (ss *StatisticService) PutChannelDataV4(channel string, trend map[int]*mode
 	}
 	ch.stats.PutData(trend)
 	ch.personalStats.PutPersistenceData(personal)
+}
+
+var (
+	binaryMagic   = [4]byte{'S', 'S', 'D', '5'}
+	binaryVersion = uint8(5)
+	binByteOrder  = binary.LittleEndian
+)
+
+func (ss *StatisticService) WriteBinarySnapshot(w io.Writer) error {
+	ss.chMu.RLock()
+	defer ss.chMu.RUnlock()
+
+	if _, err := w.Write(binaryMagic[:]); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binByteOrder, binaryVersion); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binByteOrder, uint32(len(ss.channels))); err != nil {
+		return err
+	}
+	for name, ch := range ss.channels {
+		if err := binary.Write(w, binByteOrder, uint16(len(name))); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, name); err != nil {
+			return err
+		}
+		if err := ch.stats.WriteBinaryTo(w); err != nil {
+			return err
+		}
+		if err := ch.personalStats.WriteBinaryTo(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ss *StatisticService) ReadBinarySnapshot(r io.Reader) error {
+	var magic [4]byte
+	if _, err := io.ReadFull(r, magic[:]); err != nil {
+		return err
+	}
+	if magic != binaryMagic {
+		return fmt.Errorf("invalid binary magic: %q", magic)
+	}
+	var version uint8
+	if err := binary.Read(r, binByteOrder, &version); err != nil {
+		return err
+	}
+	if version != 5 {
+		return fmt.Errorf("unsupported binary version: %d", version)
+	}
+
+	var channelCount uint32
+	if err := binary.Read(r, binByteOrder, &channelCount); err != nil {
+		return err
+	}
+	for i := uint32(0); i < channelCount; i++ {
+		var nameLen uint16
+		if err := binary.Read(r, binByteOrder, &nameLen); err != nil {
+			return err
+		}
+		nameBuf := make([]byte, nameLen)
+		if _, err := io.ReadFull(r, nameBuf); err != nil {
+			return err
+		}
+		name := string(nameBuf)
+
+		ch := ss.getOrCreateChannel(name)
+		if ch == nil {
+			return fmt.Errorf("failed to create channel %q", name)
+		}
+		if err := ch.stats.ReadBinaryFrom(r); err != nil {
+			return fmt.Errorf("channel %q trend stats: %w", name, err)
+		}
+		if err := ch.personalStats.ReadBinaryFrom(r); err != nil {
+			return fmt.Errorf("channel %q personal stats: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (ss *StatisticService) GetBufferSize() int {

@@ -1,6 +1,7 @@
 package internal
 
 import (
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"ssd/internal/controllers"
@@ -49,6 +50,8 @@ func (m *routeTestMockService) GetBufferSize() int                           { r
 func (m *routeTestMockService) GetRecordCount(_ string) int                  { return 0 }
 func (m *routeTestMockService) SetColdStorage(_ models.ColdStorageInterface) {}
 func (m *routeTestMockService) EvictExpiredFingerprints()                    {}
+func (m *routeTestMockService) WriteBinarySnapshot(_ io.Writer) error        { return nil }
+func (m *routeTestMockService) ReadBinarySnapshot(_ io.Reader) error         { return nil }
 
 func TestInitRoutes_RegistersFiveRoutes(t *testing.T) {
 	ac := controllers.NewApiController(&routeTestLogger{}, &routeTestMockService{}, &routeTestCache{})

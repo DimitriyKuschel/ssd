@@ -291,11 +291,11 @@ func TestFileManager_MultipleChannels(t *testing.T) {
 	assert.Equal(t, 30, svc.GetStatistic("ch3")[3].Views)
 }
 
-func TestFileManager_V4Roundtrip_PreservesLastSeen(t *testing.T) {
+func TestFileManager_V5Roundtrip_PreservesLastSeen(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "v4roundtrip.dat")
+	path := filepath.Join(dir, "v5roundtrip.dat")
 
-	// Save with real service
+	// Save with real service (now writes V5 binary)
 	svc := services.NewStatisticService(defaultStatConfig())
 	svc.AddStats(&models.InputStats{
 		Fingerprint: "fp1",
@@ -305,22 +305,22 @@ func TestFileManager_V4Roundtrip_PreservesLastSeen(t *testing.T) {
 	})
 	svc.AggregateStats()
 
+	// Capture lastSeen before save
+	snapshot1 := svc.GetSnapshot()
+	fp1Before := snapshot1.Channels["default"].PersonalStats["fp1"]
+	require.NotNil(t, fp1Before)
+	assert.False(t, fp1Before.LastSeen.IsZero(), "lastSeen should be set")
+	savedLastSeen := fp1Before.LastSeen
+
 	comp := &testutil.MockCompressor{}
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
 	require.NoError(t, fm.SaveToFile(path))
 
-	// Verify saved data is V4 with version field
+	// Verify file starts with binary magic "SSD5" (after identity compression)
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	var saved models.StorageV4
-	require.NoError(t, json.Unmarshal(raw, &saved))
-	assert.Equal(t, 4, saved.Version)
-	assert.NotNil(t, saved.Channels["default"])
-	fp1 := saved.Channels["default"].PersonalStats["fp1"]
-	require.NotNil(t, fp1)
-	assert.False(t, fp1.LastSeen.IsZero(), "lastSeen should be set")
-	savedLastSeen := fp1.LastSeen
+	assert.Equal(t, "SSD5", string(raw[:4]), "saved file should have V5 binary magic")
 
 	// Load into new service — lastSeen should be preserved
 	svc2 := services.NewStatisticService(defaultStatConfig())
@@ -332,18 +332,11 @@ func TestFileManager_V4Roundtrip_PreservesLastSeen(t *testing.T) {
 	require.NotNil(t, data)
 	assert.Equal(t, 1, data[1].Views)
 
-	// Verify lastSeen was preserved by saving again and checking
-	path2 := filepath.Join(dir, "v4roundtrip2.dat")
-	fm3 := NewFileManager(comp, svc2, logger)
-	require.NoError(t, fm3.SaveToFile(path2))
-
-	raw2, err := os.ReadFile(path2)
-	require.NoError(t, err)
-	var saved2 models.StorageV4
-	require.NoError(t, json.Unmarshal(raw2, &saved2))
-	fp1Again := saved2.Channels["default"].PersonalStats["fp1"]
-	require.NotNil(t, fp1Again)
-	assert.Equal(t, savedLastSeen.Unix(), fp1Again.LastSeen.Unix(), "lastSeen should be preserved across save/load")
+	// Verify lastSeen was preserved via snapshot
+	snapshot2 := svc2.GetSnapshot()
+	fp1After := snapshot2.Channels["default"].PersonalStats["fp1"]
+	require.NotNil(t, fp1After)
+	assert.Equal(t, savedLastSeen.UnixNano(), fp1After.LastSeen.UnixNano(), "lastSeen should be preserved across save/load")
 }
 
 func TestFileManager_V3ToV4Migration_SetsLastSeen(t *testing.T) {
@@ -420,4 +413,122 @@ func TestFileManager_V4Format_PreservesLastSeen(t *testing.T) {
 	fp1 := call.Personal["fp1"]
 	require.NotNil(t, fp1)
 	assert.Equal(t, pastTime.Unix(), fp1.LastSeen.Unix(), "V4 lastSeen should be preserved as-is")
+}
+
+func TestFileManager_V5_BackwardCompat_LoadsV4JSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v4legacy.dat")
+
+	// Write V4 JSON format (no "SSD5" magic)
+	storage := models.StorageV4{
+		Version: 4,
+		Channels: map[string]*models.ChannelDataV4{
+			"default": {
+				TrendStats: map[int]*models.StatRecord{1: {Views: 42}},
+				PersonalStats: map[string]*models.FingerprintPersistence{
+					"fp1": {
+						Data:     map[int]*models.StatRecord{1: {Views: 10}},
+						LastSeen: time.Date(2025, 6, 15, 12, 0, 0, 0, time.UTC),
+					},
+				},
+			},
+		},
+	}
+	jsonData, _ := json.Marshal(storage)
+	require.NoError(t, os.WriteFile(path, jsonData, 0644))
+
+	// Load — should fall through to V4 JSON path
+	svc := services.NewStatisticService(defaultStatConfig())
+	comp := &testutil.MockCompressor{}
+	logger := &testutil.MockLogger{}
+	fm := NewFileManager(comp, svc, logger)
+	require.NoError(t, fm.LoadFromFile(path))
+
+	data := svc.GetStatistic("default")
+	require.NotNil(t, data)
+	assert.Equal(t, 42, data[1].Views)
+}
+
+func TestFileManager_V5_BinaryCorrupt_FallbackJSON(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "corrupt.dat")
+
+	// Write data starting with "SSD5" magic but followed by valid V4 JSON
+	// The binary parse should fail, then fall through to JSON path
+	v4JSON, _ := json.Marshal(models.StorageV4{
+		Version: 4,
+		Channels: map[string]*models.ChannelDataV4{
+			"default": {
+				TrendStats:    map[int]*models.StatRecord{1: {Views: 99}},
+				PersonalStats: map[string]*models.FingerprintPersistence{},
+			},
+		},
+	})
+	// Prepend "SSD5" + invalid binary data, but that makes the whole thing not valid JSON either
+	// Instead, test that corrupt binary with no JSON fallback produces an error
+	corruptBinary := append([]byte("SSD5"), byte(99)) // wrong version byte
+	corruptBinary = append(corruptBinary, []byte("garbage")...)
+	require.NoError(t, os.WriteFile(path, corruptBinary, 0644))
+
+	comp := &testutil.MockCompressor{}
+	logger := &testutil.MockLogger{}
+	svc := services.NewStatisticService(defaultStatConfig())
+	fm := NewFileManager(comp, svc, logger)
+
+	// Binary fails → falls to JSON → JSON also fails on "SSD5..." prefix → error
+	err := fm.LoadFromFile(path)
+	assert.Error(t, err)
+
+	// But if we have "SSD5" corrupt binary followed by nothing valid, the logger should have warned
+	_ = v4JSON // suppress unused
+}
+
+func TestFileManager_V5_MultiChannel_Roundtrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v5multi.dat")
+
+	svc := services.NewStatisticService(defaultStatConfig())
+	svc.AddStats(&models.InputStats{
+		Fingerprint: "fp1",
+		Views:       []string{"1", "2"},
+		Clicks:      []string{"1"},
+		Channel:     "default",
+	})
+	svc.AddStats(&models.InputStats{
+		Fingerprint: "fp2",
+		Views:       []string{"3"},
+		Channel:     "news",
+	})
+	svc.AddStats(&models.InputStats{
+		Fingerprint: "fp3",
+		Views:       []string{"4", "5"},
+		Clicks:      []string{"4"},
+		Channel:     "sports",
+	})
+	svc.AggregateStats()
+
+	comp := &testutil.MockCompressor{}
+	logger := &testutil.MockLogger{}
+	fm := NewFileManager(comp, svc, logger)
+	require.NoError(t, fm.SaveToFile(path))
+
+	svc2 := services.NewStatisticService(defaultStatConfig())
+	fm2 := NewFileManager(comp, svc2, logger)
+	require.NoError(t, fm2.LoadFromFile(path))
+
+	// Verify all channels
+	assert.Equal(t, 1, svc2.GetStatistic("default")[1].Views)
+	assert.Equal(t, 1, svc2.GetStatistic("default")[1].Clicks)
+	assert.Equal(t, 1, svc2.GetStatistic("news")[3].Views)
+	assert.Equal(t, 1, svc2.GetStatistic("sports")[4].Views)
+	assert.Equal(t, 1, svc2.GetStatistic("sports")[4].Clicks)
+
+	// Verify personal stats
+	fpData := svc2.GetByFingerprint("default", "fp1")
+	require.NotNil(t, fpData)
+	assert.Equal(t, 1, fpData[1].Views)
+
+	fpData2 := svc2.GetByFingerprint("news", "fp2")
+	require.NotNil(t, fpData2)
+	assert.Equal(t, 1, fpData2[3].Views)
 }

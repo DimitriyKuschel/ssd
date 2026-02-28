@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"ssd/internal/models"
@@ -49,6 +50,8 @@ func (m *mockService) GetBufferSize() int                           { return 0 }
 func (m *mockService) GetRecordCount(_ string) int                  { return 0 }
 func (m *mockService) SetColdStorage(_ models.ColdStorageInterface) {}
 func (m *mockService) EvictExpiredFingerprints()                    {}
+func (m *mockService) WriteBinarySnapshot(_ io.Writer) error        { return nil }
+func (m *mockService) ReadBinarySnapshot(_ io.Reader) error         { return nil }
 
 type mockCache struct {
 	data map[string][]byte

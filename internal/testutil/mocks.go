@@ -1,6 +1,7 @@
 package testutil
 
 import (
+	"io"
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"sync"
@@ -147,6 +148,9 @@ func (m *MockStatisticService) GetRecordCount(_ string) int {
 func (m *MockStatisticService) SetColdStorage(_ models.ColdStorageInterface) {}
 
 func (m *MockStatisticService) EvictExpiredFingerprints() {}
+
+func (m *MockStatisticService) WriteBinarySnapshot(_ io.Writer) error { return nil }
+func (m *MockStatisticService) ReadBinarySnapshot(_ io.Reader) error  { return nil }
 
 // MockCache implements providers.CacheProviderInterface.
 type MockCache struct {

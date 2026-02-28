@@ -1,6 +1,7 @@
 package models
 
 import (
+	"io"
 	"math"
 	"sort"
 	"strconv"
@@ -156,4 +157,23 @@ func (s *StatStore) GetData() map[int]*StatRecord {
 		result[int(id)] = &copy
 	}
 	return result
+}
+
+// WriteBinaryTo writes the stat store data in binary format.
+func (s *StatStore) WriteBinaryTo(w io.Writer) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return writeStatRecords(w, s.data)
+}
+
+// ReadBinaryFrom reads stat store data from binary format.
+func (s *StatStore) ReadBinaryFrom(r io.Reader) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := readStatRecords(r)
+	if err != nil {
+		return err
+	}
+	s.data = data
+	return nil
 }

@@ -1,6 +1,7 @@
 package statistic
 
 import (
+	"bytes"
 	json "github.com/goccy/go-json"
 	"os"
 	"ssd/internal/models"
@@ -25,13 +26,11 @@ func NewFileManager(compressor interfaces.CompressorInterface, service services.
 }
 
 func (f *FileManager) SaveToFile(fileName string) error {
-	storage := f.service.GetSnapshot()
-
-	jsonData, err := json.Marshal(storage)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := f.service.WriteBinarySnapshot(&buf); err != nil {
 		return err
 	}
-	data, err := f.compressor.Compress(jsonData)
+	data, err := f.compressor.Compress(buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -79,6 +78,15 @@ func (f *FileManager) LoadFromFile(fileName string) error {
 	decompressedData, err := f.compressor.Decompress(data)
 	if err != nil {
 		return err
+	}
+
+	// V5 binary format? Check magic bytes "SSD5"
+	if len(decompressedData) >= 4 && string(decompressedData[:4]) == "SSD5" {
+		if err := f.service.ReadBinarySnapshot(bytes.NewReader(decompressedData)); err != nil {
+			f.logger.Warnf(providers.TypeApp, "V5 binary parse failed, trying JSON fallback: %v", err)
+		} else {
+			return nil
+		}
 	}
 
 	// Try V4 format (StorageV4 is a JSON superset of V3 Storage)
