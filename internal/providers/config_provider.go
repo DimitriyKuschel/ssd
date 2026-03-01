@@ -26,6 +26,13 @@ func NewConfigProvider(flags *structures.CliFlags) (*structures.Config, error) {
 
 	viper.BindEnv("logger.level", "SSD_LOG_LEVEL")
 	viper.BindEnv("statistic.interval", "SSD_AGGREGATION_INTERVAL")
+	viper.BindEnv("statistic.maxChannels", "SSD_MAX_CHANNELS")
+	viper.BindEnv("statistic.maxRecords", "SSD_MAX_RECORDS")
+	viper.BindEnv("statistic.evictionPercent", "SSD_EVICTION_PERCENT")
+	viper.BindEnv("statistic.maxRecordsPerFingerprint", "SSD_MAX_RECORDS_PER_FP")
+	viper.BindEnv("statistic.fingerprintTTL", "SSD_FINGERPRINT_TTL")
+	viper.BindEnv("statistic.coldStorageDir", "SSD_COLD_STORAGE_DIR")
+	viper.BindEnv("statistic.coldTTL", "SSD_COLD_TTL")
 	viper.BindEnv("persistence.saveInterval", "SSD_SAVE_INTERVAL")
 	viper.BindEnv("cache.enabled", "SSD_CACHE_ENABLED")
 	viper.BindEnv("cache.size", "SSD_CACHE_SIZE")
