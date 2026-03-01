@@ -217,9 +217,9 @@ func (ps *PersonalStatStore) WriteBinaryTo(w io.Writer) error {
 		if err := writeString(w, name); err != nil {
 			return err
 		}
-		rec.mu.Lock()
+		rec.mu.RLock()
 		err := writeFingerprintRecord(w, rec)
-		rec.mu.Unlock()
+		rec.mu.RUnlock()
 		if err != nil {
 			return err
 		}

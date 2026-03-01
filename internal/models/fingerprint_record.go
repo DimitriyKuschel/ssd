@@ -15,7 +15,7 @@ import (
 // holds entries that deviate from the bitmap default (Views>1, Clicks>1, or Ftr>0).
 // Thread-safe: all public methods acquire fr.mu internally.
 type FingerprintRecord struct {
-	mu       sync.Mutex
+	mu       sync.RWMutex
 	viewed   *roaring.Bitmap
 	clicked  *roaring.Bitmap
 	counts   map[uint32]StatRecord
@@ -163,51 +163,53 @@ func (fr *FingerprintRecord) evictRecords(maxRecords, evictionPercent int) {
 
 // GetData reconstructs the full map[int]*StatRecord from bitmaps + sparse counts.
 func (fr *FingerprintRecord) GetData() map[int]*StatRecord {
-	fr.mu.Lock()
-	defer fr.mu.Unlock()
+	fr.mu.RLock()
+	defer fr.mu.RUnlock()
 	return fr.buildData()
 }
 
 // GetPersistenceData returns data + lastSeen atomically under a single lock.
 func (fr *FingerprintRecord) GetPersistenceData() (map[int]*StatRecord, time.Time) {
-	fr.mu.Lock()
-	defer fr.mu.Unlock()
+	fr.mu.RLock()
+	defer fr.mu.RUnlock()
 	return fr.buildData(), fr.lastSeen
 }
 
 // buildData reconstructs the full map without locking. Caller must hold fr.mu.
+// Uses ToArray() for fast contiguous iteration and a backing slice for bulk allocation.
 func (fr *FingerprintRecord) buildData() map[int]*StatRecord {
-	result := make(map[int]*StatRecord, fr.viewed.GetCardinality()+fr.clicked.GetCardinality())
+	viewedArr := fr.viewed.ToArray()
+	clickedArr := fr.clicked.ToArray()
+	total := len(viewedArr) + len(clickedArr)
+	backing := make([]StatRecord, total)
+	result := make(map[int]*StatRecord, total)
+	idx := 0
 
-	// Pass 1: viewed bitmap
-	it := fr.viewed.Iterator()
-	for it.HasNext() {
-		id := it.Next()
+	// Pass 1: viewed
+	for _, id := range viewedArr {
 		if rec, ok := fr.counts[id]; ok {
-			cp := rec
-			result[int(id)] = &cp
+			backing[idx] = rec
 		} else {
-			result[int(id)] = &StatRecord{Views: 1}
+			backing[idx] = StatRecord{Views: 1}
 		}
+		result[int(id)] = &backing[idx]
+		idx++
 	}
 
-	// Pass 2: clicked bitmap — update or create entries
-	it = fr.clicked.Iterator()
-	for it.HasNext() {
-		id := it.Next()
+	// Pass 2: clicked — update or create entries
+	for _, id := range clickedArr {
 		if r, ok := result[int(id)]; ok {
-			// Already in result from viewed — add click if not in counts
 			if _, inCounts := fr.counts[id]; !inCounts {
 				r.Clicks = 1
 			}
 		} else {
-			// Click without view
 			if rec, inCounts := fr.counts[id]; inCounts {
-				cp := rec
-				result[int(id)] = &cp
+				backing[idx] = rec
 			} else {
-				result[int(id)] = &StatRecord{Clicks: 1}
+				backing[idx] = StatRecord{Clicks: 1}
 			}
+			result[int(id)] = &backing[idx]
+			idx++
 		}
 	}
 
@@ -216,14 +218,14 @@ func (fr *FingerprintRecord) buildData() map[int]*StatRecord {
 
 // LastSeen returns the time of last interaction with this fingerprint.
 func (fr *FingerprintRecord) LastSeen() time.Time {
-	fr.mu.Lock()
-	defer fr.mu.Unlock()
+	fr.mu.RLock()
+	defer fr.mu.RUnlock()
 	return fr.lastSeen
 }
 
 // ViewedCount returns the number of viewed content IDs.
 func (fr *FingerprintRecord) ViewedCount() int {
-	fr.mu.Lock()
-	defer fr.mu.Unlock()
+	fr.mu.RLock()
+	defer fr.mu.RUnlock()
 	return int(fr.viewed.GetCardinality())
 }
