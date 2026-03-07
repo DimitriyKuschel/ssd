@@ -2,8 +2,9 @@ package statistic
 
 import (
 	"fmt"
-	"github.com/klauspost/compress/zstd"
 	"ssd/internal/statistic/interfaces"
+
+	"github.com/klauspost/compress/zstd"
 )
 
 type ZstdCompression struct {
@@ -25,7 +26,7 @@ func (z *ZstdCompression) Close() {
 }
 
 func NewZstdCompressor() (interfaces.CompressorInterface, error) {
-	encoder, err := zstd.NewWriter(nil)
+	encoder, err := zstd.NewWriter(nil, zstd.WithEncoderConcurrency(1))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create zstd encoder: %w", err)
 	}
