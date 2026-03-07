@@ -26,7 +26,7 @@ func InitApp(cfg *structures.CliFlags) (*internal.App, error) {
 	if err != nil {
 		return nil, err
 	}
-	statisticServiceInterface := services.NewStatisticService()
+	statisticServiceInterface := services.NewStatisticService(config)
 	metricsProviderInterface := providers.NewMetricsProvider(config, statisticServiceInterface)
 	cacheProviderInterface := providers.NewInstrumentedCacheProvider(config, logger, metricsProviderInterface)
 	apiController := controllers.NewApiController(logger, statisticServiceInterface, cacheProviderInterface)

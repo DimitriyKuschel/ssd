@@ -1,12 +1,22 @@
 pidFile: "/tmp/ssd.pid"
 statistic:
   interval: 60s
+  maxChannels: 1000
+  maxRecords: -1
+  evictionPercent: 10
+  maxRecordsPerFingerprint: -1
+  fingerprintTTL: 0
+  coldStorageDir: ""
+  coldTTL: 0
 webServer:
   host: "0.0.0.0"
   port: 8090
 persistence:
   filePath: "/data/ssd/data.bin"
   saveInterval: 120s
+cache:
+  enabled: true
+  size: 32
 metrics:
   enabled: true
 logger:
