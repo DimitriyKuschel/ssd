@@ -19,7 +19,14 @@ type LoggerConfig struct {
 }
 
 type StatisticConfig struct {
-	Interval time.Duration `yaml:"interval" validate:"required|min:1"`
+	Interval        time.Duration `yaml:"interval" validate:"required|min:1"`
+	MaxChannels     int           `yaml:"maxChannels"`
+	MaxRecords      int           `yaml:"maxRecords"`
+	EvictionPercent int           `yaml:"evictionPercent"`
+	MaxRecordsPerFP int           `yaml:"maxRecordsPerFingerprint"`
+	FingerprintTTL  time.Duration `yaml:"fingerprintTTL"`
+	ColdStorageDir  string        `yaml:"coldStorageDir"`
+	ColdTTL         time.Duration `yaml:"coldTTL"`
 }
 
 type CacheConfig struct {

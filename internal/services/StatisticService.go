@@ -1,13 +1,17 @@
 package services
 
 import (
+	"encoding/binary"
+	"fmt"
+	"io"
 	"sort"
 	"ssd/internal/models"
+	"ssd/internal/structures"
 	"sync"
+	"time"
 )
 
 const DefaultChannel = "default"
-const maxChannels = 1000
 
 type StatisticServiceInterface interface {
 	AddStats(data *models.InputStats)
@@ -16,25 +20,36 @@ type StatisticServiceInterface interface {
 	GetPersonalStatistic(channel string) map[string]*models.Statistic
 	GetByFingerprint(channel, fp string) map[int]*models.StatRecord
 	PutChannelData(channel string, trend map[int]*models.StatRecord, personal map[string]*models.Statistic)
+	PutChannelDataV4(channel string, trend map[int]*models.StatRecord, personal map[string]*models.FingerprintPersistence)
 	GetChannels() []string
-	GetSnapshot() *models.Storage
+	GetSnapshot() *models.StorageV4
+	WriteBinarySnapshot(w io.Writer) error
+	ReadBinarySnapshot(r io.Reader) error
 	GetBufferSize() int
 	GetRecordCount(channel string) int
+	SetColdStorage(cold models.ColdStorageInterface)
+	EvictExpiredFingerprints()
 }
 
 type channelData struct {
-	statistic     *models.Statistic
-	personalStats *models.PersonalStats
+	stats         *models.StatStore
+	personalStats *models.PersonalStatStore
 }
 
 type StatisticService struct {
-	mu             sync.Mutex
-	activeIdx      int
-	buffers        [2][]*models.InputStats
-	prevBufSize    int
-	chMu           sync.RWMutex
-	channels       map[string]*channelData
-	cachedChannels []string
+	mu              sync.Mutex
+	activeIdx       int
+	buffers         [2][]*models.InputStats
+	prevBufSize     int
+	chMu            sync.RWMutex
+	channels        map[string]*channelData
+	cachedChannels  []string
+	maxChannels     int
+	maxRecords      int
+	evictionPercent int
+	maxRecordsPerFP int
+	fingerprintTTL  time.Duration
+	cold            models.ColdStorageInterface
 }
 
 func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
@@ -52,16 +67,12 @@ func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
 	if ch, ok := ss.channels[name]; ok {
 		return ch
 	}
-	if len(ss.channels) >= maxChannels {
+	if ss.maxChannels >= 0 && len(ss.channels) >= ss.maxChannels {
 		return nil
 	}
 	ch := &channelData{
-		statistic: &models.Statistic{
-			Data: make(map[int]*models.StatRecord),
-		},
-		personalStats: &models.PersonalStats{
-			Data: make(map[string]*models.Statistic),
-		},
+		stats:         models.NewStatStore(ss.maxRecords, ss.evictionPercent),
+		personalStats: models.NewPersonalStatStore(name, 0, ss.maxRecordsPerFP, ss.evictionPercent, ss.fingerprintTTL, ss.cold),
 	}
 	ss.channels[name] = ch
 	ss.rebuildChannelCache()
@@ -107,7 +118,7 @@ func (ss *StatisticService) AggregateStats() {
 		if ch == nil {
 			continue
 		}
-		ch.statistic.IncStats(v)
+		ch.stats.IncStats(v)
 		ch.personalStats.IncStats(v)
 	}
 }
@@ -117,7 +128,7 @@ func (ss *StatisticService) GetStatistic(channel string) map[int]*models.StatRec
 	ch, ok := ss.channels[channel]
 	ss.chMu.RUnlock()
 	if ok {
-		return ch.statistic.GetData()
+		return ch.stats.GetData()
 	}
 	return nil
 }
@@ -138,7 +149,7 @@ func (ss *StatisticService) GetByFingerprint(channel, fp string) map[int]*models
 	ss.chMu.RUnlock()
 	if ok {
 		if val, ok := ch.personalStats.Get(fp); ok {
-			return val.GetData()
+			return val.Data
 		}
 	}
 	return nil
@@ -149,7 +160,7 @@ func (ss *StatisticService) PutChannelData(channel string, trend map[int]*models
 	if ch == nil {
 		return
 	}
-	ch.statistic.PutData(trend)
+	ch.stats.PutData(trend)
 	ch.personalStats.PutData(personal)
 }
 
@@ -159,20 +170,111 @@ func (ss *StatisticService) GetChannels() []string {
 	return ss.cachedChannels
 }
 
-func (ss *StatisticService) GetSnapshot() *models.Storage {
+func (ss *StatisticService) GetSnapshot() *models.StorageV4 {
 	ss.chMu.RLock()
 	defer ss.chMu.RUnlock()
 
-	storage := &models.Storage{
-		Channels: make(map[string]*models.ChannelData, len(ss.channels)),
+	storage := &models.StorageV4{
+		Version:  4,
+		Channels: make(map[string]*models.ChannelDataV4, len(ss.channels)),
 	}
 	for name, ch := range ss.channels {
-		storage.Channels[name] = &models.ChannelData{
-			TrendStats:    ch.statistic.GetData(),
-			PersonalStats: ch.personalStats.GetData(),
+		storage.Channels[name] = &models.ChannelDataV4{
+			TrendStats:    ch.stats.GetData(),
+			PersonalStats: ch.personalStats.GetPersistenceData(),
 		}
 	}
 	return storage
+}
+
+func (ss *StatisticService) PutChannelDataV4(channel string, trend map[int]*models.StatRecord, personal map[string]*models.FingerprintPersistence) {
+	ch := ss.getOrCreateChannel(channel)
+	if ch == nil {
+		return
+	}
+	ch.stats.PutData(trend)
+	ch.personalStats.PutPersistenceData(personal)
+}
+
+var (
+	binaryMagic   = [4]byte{'S', 'S', 'D', '5'}
+	binaryVersion = uint8(5)
+	binByteOrder  = binary.LittleEndian
+)
+
+func (ss *StatisticService) WriteBinarySnapshot(w io.Writer) error {
+	ss.chMu.RLock()
+	defer ss.chMu.RUnlock()
+
+	if _, err := w.Write(binaryMagic[:]); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binByteOrder, binaryVersion); err != nil {
+		return err
+	}
+	if err := binary.Write(w, binByteOrder, uint32(len(ss.channels))); err != nil {
+		return err
+	}
+	for name, ch := range ss.channels {
+		if err := binary.Write(w, binByteOrder, uint16(len(name))); err != nil {
+			return err
+		}
+		if _, err := io.WriteString(w, name); err != nil {
+			return err
+		}
+		if err := ch.stats.WriteBinaryTo(w); err != nil {
+			return err
+		}
+		if err := ch.personalStats.WriteBinaryTo(w); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (ss *StatisticService) ReadBinarySnapshot(r io.Reader) error {
+	var magic [4]byte
+	if _, err := io.ReadFull(r, magic[:]); err != nil {
+		return err
+	}
+	if magic != binaryMagic {
+		return fmt.Errorf("invalid binary magic: %q", magic)
+	}
+	var version uint8
+	if err := binary.Read(r, binByteOrder, &version); err != nil {
+		return err
+	}
+	if version != 5 {
+		return fmt.Errorf("unsupported binary version: %d", version)
+	}
+
+	var channelCount uint32
+	if err := binary.Read(r, binByteOrder, &channelCount); err != nil {
+		return err
+	}
+	for i := uint32(0); i < channelCount; i++ {
+		var nameLen uint16
+		if err := binary.Read(r, binByteOrder, &nameLen); err != nil {
+			return err
+		}
+		nameBuf := make([]byte, nameLen)
+		if _, err := io.ReadFull(r, nameBuf); err != nil {
+			return err
+		}
+		name := string(nameBuf)
+
+		ch := ss.getOrCreateChannel(name)
+		if ch == nil {
+			return fmt.Errorf("failed to create channel %q", name)
+		}
+		if err := ch.stats.ReadBinaryFrom(r); err != nil {
+			return fmt.Errorf("channel %q trend stats: %w", name, err)
+		}
+		if err := ch.personalStats.ReadBinaryFrom(r); err != nil {
+			return fmt.Errorf("channel %q personal stats: %w", name, err)
+		}
+	}
+	return nil
 }
 
 func (ss *StatisticService) GetBufferSize() int {
@@ -187,15 +289,57 @@ func (ss *StatisticService) GetRecordCount(channel string) int {
 	ch, ok := ss.channels[channel]
 	ss.chMu.RUnlock()
 	if ok {
-		return ch.statistic.Len()
+		return ch.stats.Len()
 	}
 	return 0
 }
 
-func NewStatisticService() StatisticServiceInterface {
+// SetColdStorage injects cold storage into the service and all existing channels.
+func (ss *StatisticService) SetColdStorage(cold models.ColdStorageInterface) {
+	ss.chMu.Lock()
+	defer ss.chMu.Unlock()
+	ss.cold = cold
+	for _, ch := range ss.channels {
+		ch.personalStats.SetColdStorage(cold)
+	}
+}
+
+// EvictExpiredFingerprints removes inactive fingerprints from all channels.
+func (ss *StatisticService) EvictExpiredFingerprints() {
+	ss.chMu.RLock()
+	defer ss.chMu.RUnlock()
+	now := time.Now()
+	for _, ch := range ss.channels {
+		ch.personalStats.EvictExpired(now)
+	}
+}
+
+func NewStatisticService(config *structures.Config) StatisticServiceInterface {
+	maxChannels := config.Statistic.MaxChannels
+	if maxChannels == 0 {
+		maxChannels = 1000
+	}
+	maxRecords := config.Statistic.MaxRecords
+	if maxRecords == 0 {
+		maxRecords = -1
+	}
+	evictionPercent := config.Statistic.EvictionPercent
+	if evictionPercent <= 0 {
+		evictionPercent = 10
+	}
+	maxRecordsPerFP := config.Statistic.MaxRecordsPerFP
+	if maxRecordsPerFP == 0 {
+		maxRecordsPerFP = -1
+	}
+
 	ss := &StatisticService{
-		activeIdx: 0,
-		channels:  make(map[string]*channelData),
+		activeIdx:       0,
+		channels:        make(map[string]*channelData),
+		maxChannels:     maxChannels,
+		maxRecords:      maxRecords,
+		evictionPercent: evictionPercent,
+		maxRecordsPerFP: maxRecordsPerFP,
+		fingerprintTTL:  config.Statistic.FingerprintTTL,
 	}
 	ss.getOrCreateChannel(DefaultChannel)
 	return ss

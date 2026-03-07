@@ -1,12 +1,14 @@
 package statistic
 
 import (
+	"bytes"
 	json "github.com/goccy/go-json"
 	"os"
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"ssd/internal/services"
 	"ssd/internal/statistic/interfaces"
+	"time"
 )
 
 type FileManager struct {
@@ -24,13 +26,11 @@ func NewFileManager(compressor interfaces.CompressorInterface, service services.
 }
 
 func (f *FileManager) SaveToFile(fileName string) error {
-	storage := f.service.GetSnapshot()
-
-	jsonData, err := json.Marshal(storage)
-	if err != nil {
+	var buf bytes.Buffer
+	if err := f.service.WriteBinarySnapshot(&buf); err != nil {
 		return err
 	}
-	data, err := f.compressor.Compress(jsonData)
+	data, err := f.compressor.Compress(buf.Bytes())
 	if err != nil {
 		return err
 	}
@@ -80,17 +80,40 @@ func (f *FileManager) LoadFromFile(fileName string) error {
 		return err
 	}
 
-	// Try new format (with channels)
-	var storage models.Storage
-	if err := json.Unmarshal(decompressedData, &storage); err == nil && storage.Channels != nil {
-		for ch, cd := range storage.Channels {
+	// V5 binary format? Check magic bytes "SSD5"
+	if len(decompressedData) >= 4 && string(decompressedData[:4]) == "SSD5" {
+		if err := f.service.ReadBinarySnapshot(bytes.NewReader(decompressedData)); err != nil {
+			f.logger.Warnf(providers.TypeApp, "V5 binary parse failed, trying JSON fallback: %v", err)
+		} else {
+			return nil
+		}
+	}
+
+	// Try V4 format (StorageV4 is a JSON superset of V3 Storage)
+	var storageV4 models.StorageV4
+	if err := json.Unmarshal(decompressedData, &storageV4); err == nil && storageV4.Channels != nil {
+		now := time.Now()
+		for ch, cd := range storageV4.Channels {
 			if cd.TrendStats == nil {
 				cd.TrendStats = make(map[int]*models.StatRecord)
 			}
 			if cd.PersonalStats == nil {
-				cd.PersonalStats = make(map[string]*models.Statistic)
+				cd.PersonalStats = make(map[string]*models.FingerprintPersistence)
 			}
-			f.service.PutChannelData(ch, cd.TrendStats, cd.PersonalStats)
+			if storageV4.Version < 4 {
+				// V3 migration: set LastSeen = now for zero-value timestamps
+				migrated := 0
+				for _, fp := range cd.PersonalStats {
+					if fp.LastSeen.IsZero() {
+						fp.LastSeen = now
+						migrated++
+					}
+				}
+				if migrated > 0 {
+					f.logger.Warnf(providers.TypeApp, "Migrating channel %q from V3 to V4: set lastSeen for %d/%d fingerprints", ch, migrated, len(cd.PersonalStats))
+				}
+			}
+			f.service.PutChannelDataV4(ch, cd.TrendStats, cd.PersonalStats)
 		}
 		return nil
 	}
