@@ -59,7 +59,7 @@ go build -o ssd ./
 ```bash
 go get -u
 go vet
-goreleaser --rm-dist --skip-publish --skip-validate
+goreleaser release --clean --skip=publish,validate
 ```
 
 Run the binary for your platform from the `dist` directory.
