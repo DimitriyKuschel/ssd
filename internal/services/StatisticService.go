@@ -1,10 +1,12 @@
 package services
 
 import (
+	"cmp"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 	"ssd/internal/models"
 	"ssd/internal/structures"
 	"sync"
@@ -80,12 +82,7 @@ func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
 }
 
 func (ss *StatisticService) rebuildChannelCache() {
-	channels := make([]string, 0, len(ss.channels))
-	for name := range ss.channels {
-		channels = append(channels, name)
-	}
-	sort.Strings(channels)
-	ss.cachedChannels = channels
+	ss.cachedChannels = slices.Sorted(maps.Keys(ss.channels))
 }
 
 func (ss *StatisticService) AddStats(data *models.InputStats) {
@@ -110,10 +107,7 @@ func (ss *StatisticService) AggregateStats() {
 	ss.mu.Unlock()
 
 	for _, v := range data {
-		chName := v.Channel
-		if chName == "" {
-			chName = DefaultChannel
-		}
+		chName := cmp.Or(v.Channel, DefaultChannel)
 		ch := ss.getOrCreateChannel(chName)
 		if ch == nil {
 			continue

@@ -148,7 +148,7 @@ func TestFR_TrendingHalving(t *testing.T) {
 func TestFR_SparseCounts_MostSingleView(t *testing.T) {
 	fr := newFR()
 	// 100 IDs with single view
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		fr.IncStats(&InputStats{Views: []string{itoa(i)}}, -1, 10)
 	}
 	// Only 3 with repeated views
@@ -197,7 +197,7 @@ func TestFR_Nil(t *testing.T) {
 func TestFR_EvictRecords(t *testing.T) {
 	fr := newFR()
 	// Add 10 views with different counts
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		fr.viewed.Add(uint32(i))
 		if i < 5 {
 			// IDs 0-4 have low views
@@ -216,7 +216,7 @@ func TestFR_EvictRecords(t *testing.T) {
 
 func TestFR_EvictRecords_UnlimitedSkips(t *testing.T) {
 	fr := newFR()
-	for i := 0; i < 100; i++ {
+	for i := range 100 {
 		fr.viewed.Add(uint32(i))
 	}
 	fr.evictRecords(-1, 10) // unlimited — should not evict
@@ -239,7 +239,7 @@ func TestFR_EvictRecords_RemovesFromAllMaps(t *testing.T) {
 func TestFR_EvictOnNewView(t *testing.T) {
 	fr := newFR()
 	// Fill to max
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		fr.IncStats(&InputStats{Views: []string{itoa(i)}}, 5, 40)
 	}
 	assert.Equal(t, 5, fr.ViewedCount())

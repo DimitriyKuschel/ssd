@@ -1,9 +1,10 @@
 package models
 
 import (
+	"cmp"
 	"io"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"sync"
 )
@@ -97,11 +98,11 @@ func (s *StatStore) evict() {
 		entries = append(entries, scored{id: id, score: rec.Views})
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].score < entries[j].score
+	slices.SortFunc(entries, func(a, b scored) int {
+		return cmp.Compare(a.score, b.score)
 	})
 
-	for i := 0; i < target && i < len(entries); i++ {
+	for i := range min(target, len(entries)) {
 		delete(s.data, entries[i].id)
 	}
 }

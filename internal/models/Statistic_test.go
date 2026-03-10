@@ -172,19 +172,15 @@ func TestStatistic_ConcurrentAccess(t *testing.T) {
 	s := newStatistic()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			s.IncStats(&InputStats{Views: []string{"1", "2"}, Clicks: []string{"1"}})
-		}()
+		})
 	}
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			s.GetData()
-		}()
+		})
 	}
 	wg.Wait()
 

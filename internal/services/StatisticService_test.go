@@ -46,7 +46,7 @@ func TestAddStats_BuffersSingleItem(t *testing.T) {
 
 func TestAddStats_MultipleItems(t *testing.T) {
 	ss := newService()
-	for i := 0; i < 5; i++ {
+	for range 5 {
 		ss.AddStats(&models.InputStats{Views: []string{"1"}, Channel: DefaultChannel})
 	}
 	assert.Len(t, ss.buffers[ss.activeIdx], 5)
@@ -178,7 +178,7 @@ func TestGetChannels_Sorted(t *testing.T) {
 func TestMaxChannels(t *testing.T) {
 	ss := newService()
 	// Default channel is already created, so we can create maxChannels-1 more
-	for i := 0; i < ss.maxChannels-1; i++ {
+	for i := range ss.maxChannels - 1 {
 		ch := ss.getOrCreateChannel(fmt.Sprintf("ch%d", i))
 		require.NotNil(t, ch)
 	}
@@ -191,7 +191,7 @@ func TestMaxChannels(t *testing.T) {
 
 func TestMaxChannels_AggregateSkipsOverflow(t *testing.T) {
 	ss := newService()
-	for i := 0; i < ss.maxChannels-1; i++ {
+	for i := range ss.maxChannels - 1 {
 		ss.getOrCreateChannel(fmt.Sprintf("ch%d", i))
 	}
 
@@ -208,36 +208,30 @@ func TestConcurrent_AddAndAggregate(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Writers
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range 100 {
+		wg.Go(func() {
 			ss.AddStats(&models.InputStats{
 				Fingerprint: fmt.Sprintf("fp%d", i%5),
 				Views:       []string{"1", "2"},
 				Clicks:      []string{"1"},
 				Channel:     DefaultChannel,
 			})
-		}(i)
+		})
 	}
 
 	// Aggregators
-	for i := 0; i < 10; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 10 {
+		wg.Go(func() {
 			ss.AggregateStats()
-		}()
+		})
 	}
 
 	// Readers
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 50 {
+		wg.Go(func() {
 			ss.GetStatistic(DefaultChannel)
 			ss.GetChannels()
-		}()
+		})
 	}
 
 	wg.Wait()

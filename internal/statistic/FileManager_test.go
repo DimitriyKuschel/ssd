@@ -3,6 +3,7 @@ package statistic
 import (
 	"encoding/json"
 	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"ssd/internal/models"
@@ -54,7 +55,7 @@ func TestFileManager_SaveToFile_CreatesFile(t *testing.T) {
 
 	// Temp file should not exist
 	_, err = os.Stat(path + ".tmp")
-	assert.True(t, os.IsNotExist(err))
+	assert.True(t, errors.Is(err, fs.ErrNotExist))
 }
 
 func TestFileManager_SaveToFile_AtomicWrite(t *testing.T) {
@@ -70,7 +71,7 @@ func TestFileManager_SaveToFile_AtomicWrite(t *testing.T) {
 
 	// tmp file should be cleaned up
 	_, err := os.Stat(path + ".tmp")
-	assert.True(t, os.IsNotExist(err))
+	assert.True(t, errors.Is(err, fs.ErrNotExist))
 }
 
 func TestFileManager_LoadFromFile_FileNotExist(t *testing.T) {

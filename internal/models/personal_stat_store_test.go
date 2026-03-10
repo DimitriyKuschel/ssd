@@ -50,7 +50,7 @@ func TestPSS_GetMissing(t *testing.T) {
 func TestPSS_MaxFingerprints(t *testing.T) {
 	ps := NewPersonalStatStore("default", 10, -1, 10, 0, nil)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ps.IncStats(&InputStats{Fingerprint: fmt.Sprintf("fp%d", i), Views: []string{"1"}})
 	}
 	assert.Equal(t, 10, ps.Len())
@@ -65,7 +65,7 @@ func TestPSS_MaxFingerprints(t *testing.T) {
 func TestPSS_MaxFingerprints_ExistingStillWorks(t *testing.T) {
 	ps := NewPersonalStatStore("default", 10, -1, 10, 0, nil)
 
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		ps.IncStats(&InputStats{Fingerprint: fmt.Sprintf("fp%d", i), Views: []string{"1"}})
 	}
 
@@ -209,7 +209,7 @@ func TestPSS_MaxRecordsPerFP(t *testing.T) {
 	ps := NewPersonalStatStore("default", -1, 5, 40, 0, nil) // max 5 IDs per FP
 
 	// Add 5 views with different IDs
-	for i := 0; i < 5; i++ {
+	for i := range 5 {
 		ps.IncStats(&InputStats{Fingerprint: "fp1", Views: []string{itoa(i)}})
 	}
 	// Add one more — triggers eviction within fingerprint
@@ -224,22 +224,18 @@ func TestPSS_ConcurrentAccess(t *testing.T) {
 	ps := newPSS()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range 100 {
+		wg.Go(func() {
 			ps.IncStats(&InputStats{
 				Fingerprint: fmt.Sprintf("fp%d", i%10),
 				Views:       []string{"1"},
 			})
-		}(i)
+		})
 	}
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			ps.GetData()
-		}()
+		})
 	}
 	wg.Wait()
 

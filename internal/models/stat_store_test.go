@@ -202,7 +202,7 @@ func TestStatStore_Eviction_TriggersAtMax(t *testing.T) {
 	s := NewStatStore(10, 50) // max 10 records, evict 50%
 
 	// Fill to max
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		s.Set(i, &StatRecord{Views: i + 1})
 	}
 	assert.Equal(t, 10, s.Len())
@@ -249,7 +249,7 @@ func TestStatStore_Eviction_RemovesLowestViews(t *testing.T) {
 func TestStatStore_Eviction_UnlimitedWhenMinusOne(t *testing.T) {
 	s := NewStatStore(-1, 10) // unlimited
 
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		s.Set(i, &StatRecord{Views: 1})
 	}
 	assert.Equal(t, 10000, s.Len())
@@ -308,19 +308,15 @@ func TestStatStore_ConcurrentAccess(t *testing.T) {
 	s := newStatStore()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			s.IncStats(&InputStats{Views: []string{"1", "2"}, Clicks: []string{"1"}})
-		}()
+		})
 	}
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			s.GetData()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -375,7 +371,7 @@ func TestStatStore_MultipleHalvings(t *testing.T) {
 	assert.Equal(t, 1, v.Ftr)
 
 	// Keep incrementing until next halving
-	for i := 0; i < 256; i++ {
+	for range 256 {
 		s.IncStats(&InputStats{Views: []string{"1"}})
 	}
 
@@ -390,18 +386,18 @@ func BenchmarkStatStore_IncStats(b *testing.B) {
 		Clicks: []string{"1", "2"},
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.IncStats(input)
 	}
 }
 
 func BenchmarkStatStore_GetData(b *testing.B) {
 	s := newStatStore()
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		s.Set(i, &StatRecord{Views: i, Clicks: i / 2})
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.GetData()
 	}
 }
@@ -409,7 +405,9 @@ func BenchmarkStatStore_GetData(b *testing.B) {
 func BenchmarkStatStore_IncStats_WithEviction(b *testing.B) {
 	s := NewStatStore(1000, 10)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		s.IncStats(&InputStats{Views: []string{fmt.Sprintf("%d", i)}})
+		i++
 	}
 }

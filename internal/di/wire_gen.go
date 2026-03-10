@@ -22,23 +22,23 @@ func InitApp(cfg *structures.CliFlags) (*internal.App, error) {
 	if err != nil {
 		return nil, err
 	}
+	statisticServiceInterface := services.NewStatisticService(config)
+	healthController := controllers.NewHealthController(statisticServiceInterface)
 	logger, err := providers.NewLogProvider(config)
 	if err != nil {
 		return nil, err
 	}
-	statisticServiceInterface := services.NewStatisticService(config)
-	metricsProviderInterface := providers.NewMetricsProvider(config, statisticServiceInterface)
-	cacheProviderInterface := providers.NewInstrumentedCacheProvider(config, logger, metricsProviderInterface)
-	apiController := controllers.NewApiController(logger, statisticServiceInterface, cacheProviderInterface)
-	healthController := controllers.NewHealthController(statisticServiceInterface)
 	compressorInterface, err := statistic.NewZstdCompressor()
 	if err != nil {
 		return nil, err
 	}
 	fileManager := statistic.NewFileManager(compressorInterface, statisticServiceInterface, logger)
+	metricsProviderInterface := providers.NewMetricsProvider(config, statisticServiceInterface)
 	schedulerInterface := statistic.NewScheduler(config, logger, statisticServiceInterface, fileManager, metricsProviderInterface)
-	routerProviderInterface := internal.InitRoutes(apiController, config)
-	app, err := internal.NewApp(apiController, healthController, schedulerInterface, config, logger, routerProviderInterface, metricsProviderInterface)
+	cacheProviderInterface := providers.NewInstrumentedCacheProvider(config, logger, metricsProviderInterface)
+	apiController := controllers.NewApiController(logger, statisticServiceInterface, cacheProviderInterface)
+	serveMux := internal.InitRoutes(apiController)
+	app, err := internal.NewApp(healthController, schedulerInterface, config, logger, serveMux, metricsProviderInterface)
 	if err != nil {
 		return nil, err
 	}

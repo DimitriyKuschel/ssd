@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
 	"net/http"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -58,7 +59,7 @@ func main() {
 
 	// Wait for server
 	fmt.Print("Waiting for server... ")
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		resp, err := httpClient.Get(baseURL + "/channels")
 		if err == nil {
 			io.Copy(io.Discard, resp.Body)
@@ -126,10 +127,9 @@ func runPhase(duration time.Duration, workFn func(rng *rand.Rand) result) {
 	var totalOps atomic.Int64
 	stop := make(chan struct{})
 
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(seed int64) {
-			defer wg.Done()
+	for i := range numWorkers {
+		seed := rand.Int63() + int64(i)
+		wg.Go(func() {
 			rng := rand.New(rand.NewSource(seed))
 			for {
 				select {
@@ -141,7 +141,7 @@ func runPhase(duration time.Duration, workFn func(rng *rand.Rand) result) {
 					results <- r
 				}
 			}
-		}(rand.Int63() + int64(i))
+		})
 	}
 
 	allResults := make(map[string]*stats)
@@ -179,7 +179,7 @@ func printResults(allResults map[string]*stats, duration time.Duration) {
 	for ep := range allResults {
 		endpoints = append(endpoints, ep)
 	}
-	sort.Strings(endpoints)
+	slices.Sort(endpoints)
 
 	fmt.Printf("\n  %-22s %8s %6s %10s %10s %10s %10s\n",
 		"Endpoint", "Reqs", "Errs", "Avg", "P50", "P95", "P99")
@@ -190,8 +190,8 @@ func printResults(allResults map[string]*stats, duration time.Duration) {
 		totalOps += s.count
 		totalErrors += s.errors
 
-		sort.Slice(s.latencies, func(i, j int) bool {
-			return s.latencies[i] < s.latencies[j]
+		slices.SortFunc(s.latencies, func(a, b time.Duration) int {
+			return cmp.Compare(a, b)
 		})
 
 		avg := avgDuration(s.latencies)
@@ -221,7 +221,7 @@ func doPost(rng *rand.Rand) result {
 		clicks[i] = fmt.Sprintf("%d", rng.Intn(numIDs)+1)
 	}
 
-	body := map[string]interface{}{
+	body := map[string]any{
 		"v": views,
 		"c": clicks,
 		"f": fmt.Sprintf("fp_%d", rng.Intn(numFingerprints)),
@@ -328,7 +328,7 @@ func fmtDur(d time.Duration) string {
 
 func repeat(s string, n int) string {
 	out := ""
-	for i := 0; i < n; i++ {
+	for range n {
 		out += s
 	}
 	return out

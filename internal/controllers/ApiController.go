@@ -1,8 +1,11 @@
 package controllers
 
 import (
-	json "github.com/goccy/go-json"
+	"cmp"
 	"net/http"
+
+	json "github.com/goccy/go-json"
+
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"ssd/internal/services"
@@ -25,11 +28,7 @@ func NewApiController(logger providers.Logger, service services.StatisticService
 }
 
 func getChannel(r *http.Request) string {
-	ch := r.URL.Query().Get("ch")
-	if ch == "" {
-		return services.DefaultChannel
-	}
-	return ch
+	return cmp.Or(r.URL.Query().Get("ch"), services.DefaultChannel)
 }
 
 func (ac *ApiController) serveFromCacheOrCompute(w http.ResponseWriter, cacheKey string, compute func() (any, error)) {

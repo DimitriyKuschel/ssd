@@ -1,7 +1,9 @@
 package statistic
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"ssd/internal/models"
@@ -41,7 +43,7 @@ func TestColdStorage_Evict_NoIO(t *testing.T) {
 
 	// No file should exist until Flush
 	_, err := os.Stat(cs.coldFilePath("default"))
-	assert.True(t, os.IsNotExist(err))
+	assert.True(t, errors.Is(err, fs.ErrNotExist))
 }
 
 func TestColdStorage_RestoreFromPending(t *testing.T) {
@@ -203,7 +205,7 @@ func TestColdStorage_FlushRemovesEmptyFile(t *testing.T) {
 	require.NoError(t, cs.Flush())
 
 	_, err = os.Stat(cs.coldFilePath("default"))
-	assert.True(t, os.IsNotExist(err))
+	assert.True(t, errors.Is(err, fs.ErrNotExist))
 }
 
 func TestColdStorage_RestoreIndex_NoDir(t *testing.T) {
@@ -286,22 +288,18 @@ func TestColdStorage_ConcurrentAccess(t *testing.T) {
 	var wg sync.WaitGroup
 
 	// Concurrent evicts
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range 50 {
+		wg.Go(func() {
 			fp := "fp" + itoa(i)
 			cs.Evict("default", fp, map[int]*models.StatRecord{1: {Views: i}})
-		}(i)
+		})
 	}
 
 	// Concurrent Has checks
-	for i := 0; i < 50; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range 50 {
+		wg.Go(func() {
 			cs.Has("default", "fp"+itoa(i))
-		}(i)
+		})
 	}
 
 	wg.Wait()

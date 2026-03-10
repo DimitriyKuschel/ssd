@@ -4,13 +4,14 @@
 package di
 
 import (
-	wire "github.com/google/wire"
 	"ssd/internal"
 	"ssd/internal/controllers"
 	"ssd/internal/providers"
 	"ssd/internal/services"
 	"ssd/internal/statistic"
 	"ssd/internal/structures"
+
+	wire "github.com/google/wire"
 )
 
 func InitApp(cfg *structures.CliFlags) (*internal.App, error) {

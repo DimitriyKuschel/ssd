@@ -97,7 +97,7 @@ func TestPersonalStats_MaxFingerprints(t *testing.T) {
 	ps := newPersonalStats()
 
 	// Fill to max
-	for i := 0; i < maxFingerprints; i++ {
+	for i := range maxFingerprints {
 		ps.Data[fmt.Sprintf("fp%d", i)] = &Statistic{Data: make(map[int]*StatRecord)}
 	}
 	assert.Equal(t, maxFingerprints, ps.Len())
@@ -111,7 +111,7 @@ func TestPersonalStats_MaxFingerprints(t *testing.T) {
 
 func TestPersonalStats_MaxFingerprints_ExistingStillWorks(t *testing.T) {
 	ps := newPersonalStats()
-	for i := 0; i < maxFingerprints; i++ {
+	for i := range maxFingerprints {
 		ps.Data[fmt.Sprintf("fp%d", i)] = &Statistic{Data: make(map[int]*StatRecord)}
 	}
 
@@ -126,22 +126,18 @@ func TestPersonalStats_ConcurrentAccess(t *testing.T) {
 	ps := newPersonalStats()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func(i int) {
-			defer wg.Done()
+	for i := range 100 {
+		wg.Go(func() {
 			ps.IncStats(&InputStats{
 				Fingerprint: fmt.Sprintf("fp%d", i%10),
 				Views:       []string{"1"},
 			})
-		}(i)
+		})
 	}
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			ps.GetData()
-		}()
+		})
 	}
 	wg.Wait()
 

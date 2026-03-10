@@ -18,12 +18,12 @@ import (
 
 type mockLogger struct{}
 
-func (m *mockLogger) Errorf(_ providers.TypeEnum, _ string, _ ...interface{}) {}
-func (m *mockLogger) Warnf(_ providers.TypeEnum, _ string, _ ...interface{})  {}
-func (m *mockLogger) Debugf(_ providers.TypeEnum, _ string, _ ...interface{}) {}
-func (m *mockLogger) Infof(_ providers.TypeEnum, _ string, _ ...interface{})  {}
-func (m *mockLogger) Fatalf(_ providers.TypeEnum, _ string, _ ...interface{}) {}
-func (m *mockLogger) Close()                                                  {}
+func (m *mockLogger) Errorf(_ providers.TypeEnum, _ string, _ ...any) {}
+func (m *mockLogger) Warnf(_ providers.TypeEnum, _ string, _ ...any)  {}
+func (m *mockLogger) Debugf(_ providers.TypeEnum, _ string, _ ...any) {}
+func (m *mockLogger) Infof(_ providers.TypeEnum, _ string, _ ...any)  {}
+func (m *mockLogger) Fatalf(_ providers.TypeEnum, _ string, _ ...any) {}
+func (m *mockLogger) Close()                                          {}
 
 type mockService struct {
 	addCalls      []*models.InputStats

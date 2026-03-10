@@ -18,28 +18,28 @@ type LogEntry struct {
 	Level  string
 	Type   providers.TypeEnum
 	Format string
-	Args   []interface{}
+	Args   []any
 }
 
-func (m *MockLogger) record(level string, t providers.TypeEnum, format string, args ...interface{}) {
+func (m *MockLogger) record(level string, t providers.TypeEnum, format string, args ...any) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Logs = append(m.Logs, LogEntry{Level: level, Type: t, Format: format, Args: args})
 }
 
-func (m *MockLogger) Errorf(t providers.TypeEnum, format string, args ...interface{}) {
+func (m *MockLogger) Errorf(t providers.TypeEnum, format string, args ...any) {
 	m.record("error", t, format, args...)
 }
-func (m *MockLogger) Warnf(t providers.TypeEnum, format string, args ...interface{}) {
+func (m *MockLogger) Warnf(t providers.TypeEnum, format string, args ...any) {
 	m.record("warn", t, format, args...)
 }
-func (m *MockLogger) Debugf(t providers.TypeEnum, format string, args ...interface{}) {
+func (m *MockLogger) Debugf(t providers.TypeEnum, format string, args ...any) {
 	m.record("debug", t, format, args...)
 }
-func (m *MockLogger) Infof(t providers.TypeEnum, format string, args ...interface{}) {
+func (m *MockLogger) Infof(t providers.TypeEnum, format string, args ...any) {
 	m.record("info", t, format, args...)
 }
-func (m *MockLogger) Fatalf(t providers.TypeEnum, format string, args ...interface{}) {
+func (m *MockLogger) Fatalf(t providers.TypeEnum, format string, args ...any) {
 	m.record("fatal", t, format, args...)
 }
 func (m *MockLogger) Close() {}

@@ -1,8 +1,9 @@
 package models
 
 import (
+	"cmp"
 	"math"
-	"sort"
+	"slices"
 	"strconv"
 	"sync"
 	"time"
@@ -149,11 +150,11 @@ func (fr *FingerprintRecord) evictRecords(maxRecords, evictionPercent int) {
 		entries = append(entries, scored{id: id, score: score})
 	}
 
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].score < entries[j].score
+	slices.SortFunc(entries, func(a, b scored) int {
+		return cmp.Compare(a.score, b.score)
 	})
 
-	for i := 0; i < target && i < len(entries); i++ {
+	for i := range min(target, len(entries)) {
 		id := entries[i].id
 		fr.viewed.Remove(id)
 		fr.clicked.Remove(id)

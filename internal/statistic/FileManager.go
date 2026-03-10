@@ -2,13 +2,17 @@ package statistic
 
 import (
 	"bytes"
-	json "github.com/goccy/go-json"
+	"errors"
+	"io/fs"
 	"os"
+	"time"
+
+	json "github.com/goccy/go-json"
+
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"ssd/internal/services"
 	"ssd/internal/statistic/interfaces"
-	"time"
 )
 
 type FileManager struct {
@@ -69,7 +73,7 @@ func (f *FileManager) Close() {
 func (f *FileManager) LoadFromFile(fileName string) error {
 	data, err := os.ReadFile(fileName)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return err
