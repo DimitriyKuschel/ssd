@@ -98,7 +98,7 @@ func main() {
 		case r < 0.94:
 			return doGetFingerprint(rng)
 		default:
-			return doGetChannels()
+			return doGetChannels(rng)
 		}
 	})
 
@@ -116,7 +116,7 @@ func main() {
 		case r < 0.80:
 			return doGetFingerprint(rng)
 		default:
-			return doGetChannels()
+			return doGetChannels(rng)
 		}
 	})
 }
@@ -245,6 +245,11 @@ func doPost(rng *rand.Rand) result {
 func doGetList(rng *rand.Rand) result {
 	ch := channels[rng.Intn(len(channels))]
 	url := fmt.Sprintf("%s/list?ch=%s", baseURL, ch)
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(100) + 1
+		offset := rng.Intn(200)
+		url = fmt.Sprintf("%s&limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
 	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
@@ -259,6 +264,11 @@ func doGetList(rng *rand.Rand) result {
 func doGetFingerprints(rng *rand.Rand) result {
 	ch := channels[rng.Intn(len(channels))]
 	url := fmt.Sprintf("%s/fingerprints?ch=%s", baseURL, ch)
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(50) + 1
+		offset := rng.Intn(50)
+		url = fmt.Sprintf("%s&limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
 	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
@@ -274,6 +284,11 @@ func doGetFingerprint(rng *rand.Rand) result {
 	ch := channels[rng.Intn(len(channels))]
 	fp := fmt.Sprintf("fp_%d", rng.Intn(numFingerprints))
 	url := fmt.Sprintf("%s/fingerprint?ch=%s&f=%s", baseURL, ch, fp)
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(100) + 1
+		offset := rng.Intn(200)
+		url = fmt.Sprintf("%s&limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
 	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
@@ -285,9 +300,15 @@ func doGetFingerprint(rng *rand.Rand) result {
 	return result{"GET /fingerprint", resp.StatusCode, lat, resp.StatusCode != 200}
 }
 
-func doGetChannels() result {
+func doGetChannels(rng *rand.Rand) result {
+	url := baseURL + "/channels"
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(5) + 1
+		offset := rng.Intn(3)
+		url = fmt.Sprintf("%s?limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
-	resp, err := httpClient.Get(baseURL + "/channels")
+	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
 	if err != nil {
 		return result{"GET /channels", 0, lat, true}

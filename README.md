@@ -85,6 +85,24 @@ Run the binary for your platform from the `dist` directory.
 
 All GET endpoints accept an optional `?ch=<channel>` query parameter for channel isolation. If omitted, the `"default"` channel is used.
 
+All data-returning GET endpoints (`/list`, `/fingerprints`, `/fingerprint`, `/channels`) support optional pagination via `limit` and `offset` query parameters. When pagination is used, the response is wrapped:
+
+```json
+{
+  "data": { ... },
+  "total": 1000,
+  "limit": 10,
+  "offset": 20
+}
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `limit` | `int` | Max items to return (max: 10000) |
+| `offset` | `int` | Number of items to skip |
+
+When neither `limit` nor `offset` is provided, the raw response format is returned (backward compatible).
+
 ### POST `/` — Submit Statistics
 
 Record views and clicks for content items.
