@@ -1,14 +1,14 @@
 # Simple Statistic Daemon (SSD)
 
-A high-performance Go daemon for collecting and aggregating real-time content statistics (views, clicks) with fingerprint-based user tracking. Single binary, zero external dependencies, ~140K writes/sec.
+A high-performance Go daemon for collecting and aggregating real-time content statistics (views, clicks, hits, engagements) with fingerprint-based user tracking. Single binary, zero external dependencies, ~140K writes/sec.
 
-> **TL;DR** — Drop-in analytics backend: send views/clicks via JSON POST, query trending stats via GET. No database required.
+> **TL;DR** — Drop-in analytics backend: send views/clicks/hits/engagements via JSON POST, query trending stats with bounce rate via GET. No database required.
 
 ## Why SSD?
 
 | Problem | SSD's answer |
 |---------|-------------|
-| Need real-time view/click counting | Double-buffer pattern: **~140,000 POST/sec** |
+| Need real-time view/click/hit/engagement counting | Double-buffer pattern: **~140,000 POST/sec** |
 | Database is overkill for simple counters | Standalone binary, data persisted as Zstd-compressed binary |
 | Read latency under load | In-place mutation + optional response cache: **P99 under 30ms** |
 | Content goes stale but counters only grow | Trending algorithm with automatic time-decay |
@@ -25,10 +25,11 @@ A high-performance Go daemon for collecting and aggregating real-time content st
 - **Fingerprint TTL** — inactive fingerprints are evicted to cold storage on disk after configurable TTL, automatically restored on next interaction
 - **Cold Storage** — write-behind disk tier for evicted fingerprints with lazy load, lazy delete, and configurable cold TTL for permanent cleanup
 - **Fast JSON** — `goccy/go-json` for 2-3x faster serialization vs stdlib `encoding/json`
-- **Binary Persistence** — V5 binary format with Roaring Bitmap serialization for fast save/restore; automatic migration from older JSON formats (V1-V4)
+- **Hit & Engagement Tracking** — track hits and engagements per content item; bounce rate (`br`) computed on the fly in GET responses as `(hits - engagements) / hits * 100`
+- **Binary Persistence** — V6 binary format with Roaring Bitmap serialization and hits/engagements fields; automatic migration from older formats (V1-V5)
 - **Response Cache** — optional freecache-based caching with zero-alloc key lookup (`unsafe.Slice`), TTL = aggregation interval + 1s
 - **Zero External Dependencies** — standalone binary, no databases or message queues
-- **Trending Algorithm** — automatic time-decay: views > 512 triggers halving with factor counter for trending CTR
+- **Trending Algorithm** — automatic time-decay: views > 512 triggers halving of all counters (views, clicks, hits, engagements) with factor counter for trending CTR
 - **Fingerprint Tracking** — per-user statistics grouped by browser fingerprint
 - **Channel Isolation** — separate stat namespaces via `ch` parameter (configurable max channels), double-check RLock/Lock pattern
 - **Crash-Safe Persistence** — atomic file writes (tmp + fsync + rename) with Zstd compression
@@ -36,7 +37,7 @@ A high-performance Go daemon for collecting and aggregating real-time content st
 - **Prometheus Metrics** — optional `/metrics` endpoint with request counters, latency histograms, cache hit/miss, persistence duration, buffer/channel gauges
 - **Health Check** — `GET /health` for Kubernetes readiness/liveness probes (uptime, buffer size, channel count)
 - **HTTP Hardened** — server-side ReadTimeout, WriteTimeout, IdleTimeout
-- **Fully Tested** — 253 unit tests with race detector
+- **Fully Tested** — 317 unit tests with race detector
 - **Docker Ready** — multi-stage Dockerfile included
 
 ## Quick Start
@@ -105,13 +106,15 @@ When neither `limit` nor `offset` is provided, the raw response format is return
 
 ### POST `/` — Submit Statistics
 
-Record views and clicks for content items.
+Record views, clicks, hits and engagements for content items.
 
 **Request:**
 ```json
 {
   "v": ["105318", "58440"],
   "c": ["58440"],
+  "h": ["105318"],
+  "e": ["105318"],
   "f": "1035ed17aa899a3846b91b57021c2b4f",
   "ch": "news"
 }
@@ -121,8 +124,16 @@ Record views and clicks for content items.
 |-------|------|----------|-------------|
 | `v` | `string[]` | no | IDs of viewed content |
 | `c` | `string[]` | no | IDs of clicked content |
+| `h` | `string[]` | no | IDs of content with a hit (page visit) |
+| `e` | `string[]` | no | IDs of content with engagement (interaction after hit) |
 | `f` | `string` | no | User fingerprint |
 | `ch` | `string` | no | Channel name (default: `"default"`) |
+
+**Response:** `201 Created`
+
+### POST `/hit` — Submit Statistics (alias)
+
+Same handler and payload as `POST /`. Convenience endpoint for semantic clarity when sending hit/engagement data.
 
 **Response:** `201 Created`
 
@@ -133,8 +144,8 @@ Returns trending statistics for all tracked content.
 **Response:** `200 OK`
 ```json
 {
-  "105318": { "Views": 1, "Clicks": 0, "Ftr": 0 },
-  "58440":  { "Views": 1, "Clicks": 1, "Ftr": 0 }
+  "105318": { "Views": 1, "Clicks": 0, "Ftr": 0, "h": 1, "e": 1, "br": 0 },
+  "58440":  { "Views": 1, "Clicks": 1, "Ftr": 0, "h": 0, "e": 0, "br": 0 }
 }
 ```
 
@@ -143,8 +154,11 @@ Returns trending statistics for all tracked content.
 | `Views` | View count (halved when > 512) |
 | `Clicks` | Click count (halved proportionally) |
 | `Ftr` | Factor — number of times values were halved |
+| `h` | Hit count (halved proportionally) |
+| `e` | Engagement count (halved proportionally) |
+| `br` | Bounce rate — computed as `(h - e) / h * 100`, clamped to 0-100; 0 when `h` = 0 |
 
-To reconstruct full values: `Views * 2^Ftr`, `Clicks * 2^Ftr`.
+To reconstruct full values: `Views * 2^Ftr`, `Clicks * 2^Ftr`, etc.
 
 ### GET `/fingerprints` — Statistics by Fingerprint
 
@@ -155,7 +169,7 @@ Returns all statistics grouped by user fingerprint.
 {
   "1035ed17aa899a3846b91b57021c2b4f": {
     "data": {
-      "105318": { "Views": 1, "Clicks": 0, "Ftr": 0 }
+      "105318": { "Views": 1, "Clicks": 0, "Ftr": 0, "h": 0, "e": 0, "br": 0 }
     }
   }
 }
@@ -168,7 +182,7 @@ Returns statistics for a specific user fingerprint.
 **Response:** `200 OK`
 ```json
 {
-  "105318": { "Views": 1, "Clicks": 0, "Ftr": 0 }
+  "105318": { "Views": 1, "Clicks": 0, "Ftr": 0, "h": 0, "e": 0, "br": 0 }
 }
 ```
 
@@ -308,9 +322,9 @@ HTTP Request → MetricsMiddleware → Router (method check) → ApiController �
 - **FingerprintRecord** — Roaring Bitmaps (`viewed`/`clicked`) + sparse `counts` map; first interaction = bitmap bit only, repeated = promoted to counts. ~96% memory reduction vs full StatRecord per ID
 - **PersonalStatStore** — manages per-channel fingerprints with RLock fast path, TTL eviction, per-fingerprint record limits, and cold storage restore on miss
 - **Cold Storage** — write-behind disk overflow: evicted fingerprints buffered in-memory, flushed to `{channel}.cold.zst` atomically; lazy load/delete minimizes I/O
-- **Trending Decay** — when views exceed 512, values are halved via bit-shift `(n+1)>>1` and `Ftr` increments, naturally decaying old content
+- **Trending Decay** — when views exceed 512, all values (views, clicks, hits, engagements) are halved via bit-shift `(n+1)>>1` and `Ftr` increments, naturally decaying old content
 - **Atomic Snapshot** — `GetSnapshot()` collects all channel data under a single RLock for consistent persistence
-- **Binary Persistence** — V5 format with Roaring Bitmap serialization; automatic migration from V1-V4 JSON formats
+- **Binary Persistence** — V6 format with Roaring Bitmap serialization and hits/engagements fields; automatic migration from V1-V5 formats
 - **Atomic Persistence** — writes to a temp file, syncs to disk, then renames for crash safety
 - **Two-Mux Routing** — outer mux handles `/health` and `/metrics` (infrastructure); inner mux handles API routes wrapped with metrics middleware
 - **Metrics** — Prometheus pull model via `/metrics`; noop provider injected when disabled (zero overhead)
@@ -420,7 +434,7 @@ go run tests/loadtest/main.go
 - `statistic.coldTTL` — permanent cleanup of old cold entries
 - Write-behind design: `Evict()` buffers in memory, `Flush()` writes to disk atomically
 
-**V5 binary persistence:**
+**V5 binary persistence (upgraded to V6 in v1.4.0):**
 - New binary format with Roaring Bitmap serialization for faster save/restore
 - Automatic migration from V1/V2/V3/V4 JSON formats on startup
 - `fsync` before rename for crash safety
@@ -443,7 +457,58 @@ go run tests/loadtest/main.go
 
 The small P99 regression (~7-14%) is expected: `StatStore` uses read-modify-write (two map accesses instead of pointer mutation), and `FingerprintRecord.GetData()` reconstructs `map[int]*StatRecord` from bitmaps + sparse counts on each read. With response cache enabled, the regression is fully absorbed (cache ON P99 is within 1-2% of v1.2.x). The trade-off is ~63% less memory per stat record and ~96% less memory per fingerprint, plus bounded memory via eviction.
 
-**27 files changed, +3,804 / -81 lines. Test count: 142 → 253.**
+**27 files changed, +3,804 / -81 lines. Test count: 142 → 253 → 317 (v1.4.0).**
+
+### What's new in v1.4.0 vs v1.3.x
+
+**Hit & Engagement tracking:**
+- New `h` (hits) and `e` (engagements) fields on `InputStats` — tracked globally per content item in `StatStore`
+- Bounce rate (`br`) computed in `GetData()` copies as `(hits - engagements) / hits * 100`, clamped to 0-100; zero-overhead via json struct tags (no custom MarshalJSON)
+- All counters (Views, Clicks, Hits, Engagements) participate in trending halving when Views > 512
+
+**New endpoint:**
+- `POST /hit` — alias for `POST /`, same handler. Convenience for semantic clarity when sending hit/engagement data
+
+**V6 binary persistence:**
+- New binary format (`SSD6` magic): adds `hits(int32)` + `engagements(int32)` per stat record
+- Backward compatible: V5 files are auto-migrated on load (hits/engagements default to 0)
+- V5 readers (`readStatRecordsV5`, `readFingerprintRecordV5`) handle the old 3-field format
+
+**GET response changes:**
+- `GET /list` now includes `h`, `e`, `br` fields in each `StatRecord`
+- `GET /fingerprints` and `GET /fingerprint` also include these fields (always 0 for fingerprint-level data, since hits/engagements are global only)
+
+**Performance comparison v1.3.x → v1.4.0 (A/B, identical load test, same machine, back-to-back):**
+
+Phase 1 — Seeding (100% POST):
+
+| Metric | v1.3.x | v1.4.0 | Change |
+|---|---|---|---|
+| RPS (cache OFF) | 126,518 | 128,588 | **+2%** |
+| RPS (cache ON) | 126,916 | 130,945 | **+3%** |
+| P99 (cache OFF) | 1.6ms | 1.6ms | 0% |
+
+Phase 2 — Mixed load (70% POST, 30% GET):
+
+| Metric | v1.3.x OFF | v1.4.0 OFF | v1.3.x ON | v1.4.0 ON |
+|---|---|---|---|---|
+| **Total RPS** | 11,892 | 11,086 | 11,162 | **12,762** |
+| GET /list P99 | 20.8ms | 25.9ms | 20.0ms | 19.1ms |
+| GET /fingerprints P99 | 65.6ms | 79.7ms | 77.1ms | 74.5ms |
+| GET /fingerprint P99 | 20.6ms | 24.8ms | 19.2ms | 18.8ms |
+| GET /channels P99 | 18.4ms | 20.9ms | 19.9ms | 17.5ms |
+
+Phase 3 — Read-heavy load (10% POST, 90% GET):
+
+| Metric | v1.3.x OFF | v1.4.0 OFF | v1.3.x ON | v1.4.0 ON |
+|---|---|---|---|---|
+| **Total RPS** | 4,126 | 3,939 | 3,900 | **4,529** |
+| GET /list P99 | 53.1ms | 63.3ms | 51.3ms | 42.5ms |
+| GET /fingerprints P99 | 123.6ms | 148.4ms | 158.9ms | 125.3ms |
+| GET /fingerprint P99 | 54.9ms | 63.3ms | 59.0ms | 45.6ms |
+| GET /channels P99 | 38.8ms | 45.8ms | 41.3ms | 40.0ms |
+
+Cache OFF shows ~5-15% P99 increase on GET endpoints — expected due to larger JSON responses (3 extra fields per record: `h`, `e`, `br`). With cache ON, the regression disappears and v1.4.0 is **+14-16% faster** on total RPS thanks to `BounceRate` being computed during `GetData()` copy via json struct tags (zero-alloc serialization path, no custom `MarshalJSON` overhead).
 
 ## Development
 

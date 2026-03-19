@@ -12,5 +12,6 @@ func InitRoutes(apiController *controllers.ApiController) *http.ServeMux {
 	mux.HandleFunc("GET /fingerprints", apiController.GetPersonalStats)
 	mux.HandleFunc("GET /fingerprint", apiController.GetByFingerprint)
 	mux.HandleFunc("GET /channels", apiController.GetChannels)
+	mux.HandleFunc("POST /hit", apiController.ReceiveStats)
 	return mux
 }

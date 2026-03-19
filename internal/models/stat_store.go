@@ -49,6 +49,8 @@ func (s *StatStore) IncStats(data *InputStats) {
 			if rec.Views > 512 {
 				rec.Views = (rec.Views + 1) >> 1
 				rec.Clicks = (rec.Clicks + 1) >> 1
+				rec.Hits = (rec.Hits + 1) >> 1
+				rec.Engagements = (rec.Engagements + 1) >> 1
 				rec.Ftr++
 			}
 			s.data[id] = rec
@@ -72,6 +74,40 @@ func (s *StatStore) IncStats(data *InputStats) {
 		} else {
 			s.evictIfNeeded()
 			s.data[id] = StatRecord{Clicks: 1}
+		}
+	}
+	for _, v := range data.Hits {
+		if v == "" {
+			continue
+		}
+		key, err := strconv.Atoi(v)
+		if err != nil || key < 0 || key > math.MaxUint32 {
+			continue
+		}
+		id := uint32(key)
+		if rec, ok := s.data[id]; ok {
+			rec.Hits++
+			s.data[id] = rec
+		} else {
+			s.evictIfNeeded()
+			s.data[id] = StatRecord{Hits: 1}
+		}
+	}
+	for _, v := range data.Engagements {
+		if v == "" {
+			continue
+		}
+		key, err := strconv.Atoi(v)
+		if err != nil || key < 0 || key > math.MaxUint32 {
+			continue
+		}
+		id := uint32(key)
+		if rec, ok := s.data[id]; ok {
+			rec.Engagements++
+			s.data[id] = rec
+		} else {
+			s.evictIfNeeded()
+			s.data[id] = StatRecord{Engagements: 1}
 		}
 	}
 }
@@ -118,6 +154,7 @@ func (s *StatStore) Get(key int) (*StatRecord, bool) {
 		return nil, false
 	}
 	copy := val
+	copy.ComputeBounceRate()
 	return &copy, true
 }
 
@@ -155,6 +192,7 @@ func (s *StatStore) GetData() map[int]*StatRecord {
 	result := make(map[int]*StatRecord, len(s.data))
 	for id, rec := range s.data {
 		copy := rec
+		copy.ComputeBounceRate()
 		result[int(id)] = &copy
 	}
 	return result
@@ -167,11 +205,23 @@ func (s *StatStore) WriteBinaryTo(w io.Writer) error {
 	return writeStatRecords(w, s.data)
 }
 
-// ReadBinaryFrom reads stat store data from binary format.
+// ReadBinaryFrom reads stat store data from V6 binary format.
 func (s *StatStore) ReadBinaryFrom(r io.Reader) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	data, err := readStatRecords(r)
+	if err != nil {
+		return err
+	}
+	s.data = data
+	return nil
+}
+
+// ReadBinaryFromV5 reads stat store data from V5 binary format (without hits/engagements).
+func (s *StatStore) ReadBinaryFromV5(r io.Reader) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	data, err := readStatRecordsV5(r)
 	if err != nil {
 		return err
 	}

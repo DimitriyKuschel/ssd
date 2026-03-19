@@ -251,6 +251,30 @@ func (ps *PersonalStatStore) ReadBinaryFrom(r io.Reader) error {
 	return nil
 }
 
+// ReadBinaryFromV5 reads fingerprint data from V5 binary format (without hits/engagements in counts).
+func (ps *PersonalStatStore) ReadBinaryFromV5(r io.Reader) error {
+	ps.mu.Lock()
+	defer ps.mu.Unlock()
+
+	var count uint32
+	if err := binary.Read(r, byteOrder, &count); err != nil {
+		return err
+	}
+	ps.fingerprints = make(map[string]*FingerprintRecord, count)
+	for i := uint32(0); i < count; i++ {
+		name, err := readString(r)
+		if err != nil {
+			return err
+		}
+		rec, err := readFingerprintRecordV5(r)
+		if err != nil {
+			return err
+		}
+		ps.fingerprints[name] = rec
+	}
+	return nil
+}
+
 // SetColdStorage injects cold storage into this PersonalStatStore.
 func (ps *PersonalStatStore) SetColdStorage(cold ColdStorageInterface) {
 	ps.mu.Lock()

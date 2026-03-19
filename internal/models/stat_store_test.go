@@ -379,6 +379,55 @@ func TestStatStore_MultipleHalvings(t *testing.T) {
 	assert.Equal(t, 2, v.Ftr)
 }
 
+func TestStatStore_IncStats_NewHits(t *testing.T) {
+	s := newStatStore()
+	input := &InputStats{Hits: []string{"1", "2"}}
+	s.IncStats(input)
+
+	assert.Equal(t, 2, s.Len())
+	v1, _ := s.Get(1)
+	assert.Equal(t, 1, v1.Hits)
+	assert.Equal(t, 0, v1.Views)
+}
+
+func TestStatStore_IncStats_NewEngagements(t *testing.T) {
+	s := newStatStore()
+	input := &InputStats{Engagements: []string{"1"}}
+	s.IncStats(input)
+
+	v, _ := s.Get(1)
+	assert.Equal(t, 1, v.Engagements)
+	assert.Equal(t, 0, v.Hits)
+}
+
+func TestStatStore_IncStats_ExistingHitsAndEngagements(t *testing.T) {
+	s := newStatStore()
+	s.Set(1, &StatRecord{Views: 10, Hits: 5, Engagements: 3})
+
+	input := &InputStats{Hits: []string{"1"}, Engagements: []string{"1"}}
+	s.IncStats(input)
+
+	v, _ := s.Get(1)
+	assert.Equal(t, 6, v.Hits)
+	assert.Equal(t, 4, v.Engagements)
+	assert.Equal(t, 10, v.Views)
+}
+
+func TestStatStore_IncStats_TrendingHalving_IncludesHitsEngagements(t *testing.T) {
+	s := newStatStore()
+	s.Set(1, &StatRecord{Views: 512, Clicks: 100, Hits: 200, Engagements: 80, Ftr: 0})
+
+	input := &InputStats{Views: []string{"1"}}
+	s.IncStats(input)
+
+	v, _ := s.Get(1)
+	assert.Equal(t, 257, v.Views)
+	assert.Equal(t, 50, v.Clicks)
+	assert.Equal(t, 100, v.Hits)       // (200+1)>>1 = 100
+	assert.Equal(t, 40, v.Engagements) // (80+1)>>1 = 40
+	assert.Equal(t, 1, v.Ftr)
+}
+
 func BenchmarkStatStore_IncStats(b *testing.B) {
 	s := newStatStore()
 	input := &InputStats{

@@ -67,6 +67,8 @@ func TestInitRoutes_MethodEnforcement(t *testing.T) {
 		{"GET /fingerprints OK", http.MethodGet, "/fingerprints", http.StatusOK},
 		{"GET /fingerprint OK", http.MethodGet, "/fingerprint", http.StatusOK},
 		{"GET /channels OK", http.MethodGet, "/channels", http.StatusOK},
+		{"POST /hit empty body", http.MethodPost, "/hit", http.StatusBadRequest},
+		{"GET /hit rejected", http.MethodGet, "/hit", http.StatusMethodNotAllowed},
 	}
 
 	for _, tt := range tests {

@@ -226,20 +226,43 @@ func doPost(rng *rand.Rand) result {
 		"c": clicks,
 		"f": fmt.Sprintf("fp_%d", rng.Intn(numFingerprints)),
 	}
+
+	// 40% of requests include hits/engagements
+	if rng.Float64() < 0.4 {
+		nHits := rng.Intn(3) + 1
+		nEngagements := rng.Intn(2)
+		hits := make([]string, nHits)
+		engagements := make([]string, nEngagements)
+		for i := range hits {
+			hits[i] = fmt.Sprintf("%d", rng.Intn(numIDs)+1)
+		}
+		for i := range engagements {
+			engagements[i] = fmt.Sprintf("%d", rng.Intn(numIDs)+1)
+		}
+		body["h"] = hits
+		body["e"] = engagements
+	}
+
 	if rng.Float64() < 0.6 {
 		body["ch"] = channels[rng.Intn(len(channels))]
 	}
 
+	// Randomly use POST /hit instead of POST /
+	endpoint := "/"
+	if rng.Float64() < 0.3 {
+		endpoint = "/hit"
+	}
+
 	data, _ := json.Marshal(body)
 	start := time.Now()
-	resp, err := httpClient.Post(baseURL+"/", "application/json", bytes.NewReader(data))
+	resp, err := httpClient.Post(baseURL+endpoint, "application/json", bytes.NewReader(data))
 	lat := time.Since(start)
 	if err != nil {
-		return result{"POST /", 0, lat, true}
+		return result{"POST " + endpoint, 0, lat, true}
 	}
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
-	return result{"POST /", resp.StatusCode, lat, resp.StatusCode != 201}
+	return result{"POST " + endpoint, resp.StatusCode, lat, resp.StatusCode != 201}
 }
 
 func doGetList(rng *rand.Rand) result {

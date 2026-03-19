@@ -86,6 +86,22 @@ func TestReceiveStats_ValidPayload(t *testing.T) {
 	assert.Equal(t, []string{"1", "2"}, svc.addCalls[0].Views)
 }
 
+func TestReceiveStats_HitsAndEngagements(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"h":["1","2"],"e":["1"],"f":"fp1"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	require.Len(t, svc.addCalls, 1)
+	assert.Equal(t, []string{"1", "2"}, svc.addCalls[0].Hits)
+	assert.Equal(t, []string{"1"}, svc.addCalls[0].Engagements)
+}
+
 func TestReceiveStats_InvalidJSON(t *testing.T) {
 	svc := &mockService{}
 	ac := newTestController(svc, newMockCache())

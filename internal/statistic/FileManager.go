@@ -84,10 +84,10 @@ func (f *FileManager) LoadFromFile(fileName string) error {
 		return err
 	}
 
-	// V5 binary format? Check magic bytes "SSD5"
-	if len(decompressedData) >= 4 && string(decompressedData[:4]) == "SSD5" {
+	// V6/V5 binary format? Check magic bytes "SSD6" or "SSD5"
+	if len(decompressedData) >= 4 && (string(decompressedData[:4]) == "SSD6" || string(decompressedData[:4]) == "SSD5") {
 		if err := f.service.ReadBinarySnapshot(bytes.NewReader(decompressedData)); err != nil {
-			f.logger.Warnf(providers.TypeApp, "V5 binary parse failed, trying JSON fallback: %v", err)
+			f.logger.Warnf(providers.TypeApp, "Binary parse failed, trying JSON fallback: %v", err)
 		} else {
 			return nil
 		}

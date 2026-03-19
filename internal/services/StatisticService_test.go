@@ -2,6 +2,7 @@ package services
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
 	"sort"
 	"ssd/internal/models"
@@ -377,8 +378,119 @@ func TestReadBinarySnapshot_InvalidMagic(t *testing.T) {
 
 func TestReadBinarySnapshot_UnsupportedVersion(t *testing.T) {
 	ss := newService()
-	data := []byte{'S', 'S', 'D', '5', 99} // version 99
+	data := []byte{'S', 'S', 'D', '6', 99} // version 99
 	err := ss.ReadBinarySnapshot(bytes.NewReader(data))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "unsupported binary version")
+}
+
+func TestReadBinarySnapshot_V5Migration_Empty(t *testing.T) {
+	// Minimal V5 binary: magic + version + 1 channel with 0 stat records + 0 fingerprints
+	var v5buf bytes.Buffer
+	v5buf.Write([]byte{'S', 'S', 'D', '5'})
+	v5buf.WriteByte(5)
+	// channel count = 1
+	v5buf.Write([]byte{1, 0, 0, 0})
+	// channel name "test" (uint16 len + bytes)
+	v5buf.Write([]byte{4, 0})
+	v5buf.WriteString("test")
+	// stat records count = 0
+	v5buf.Write([]byte{0, 0, 0, 0})
+	// fingerprint count = 0
+	v5buf.Write([]byte{0, 0, 0, 0})
+
+	ss := newService()
+	require.NoError(t, ss.ReadBinarySnapshot(bytes.NewReader(v5buf.Bytes())))
+
+	channels := ss.GetChannels()
+	assert.Contains(t, channels, "test")
+	data := ss.GetStatistic("test")
+	assert.Empty(t, data)
+}
+
+func TestReadBinarySnapshot_V5Migration_WithData(t *testing.T) {
+	// Build V5 binary manually: SSD5 + version(5) + 1 channel "default"
+	// with 2 stat records (V5 format: id(uint32) + views(int32) + clicks(int32) + ftr(int32))
+	// and 0 fingerprints
+	var buf bytes.Buffer
+	le := binary.LittleEndian
+
+	buf.Write([]byte{'S', 'S', 'D', '5'})
+	buf.WriteByte(5)
+
+	// channel count = 1
+	binary.Write(&buf, le, uint32(1))
+	// channel name "default"
+	binary.Write(&buf, le, uint16(7))
+	buf.WriteString("default")
+
+	// stat records count = 2
+	binary.Write(&buf, le, uint32(2))
+	// record 1: id=1, views=42, clicks=10, ftr=2
+	binary.Write(&buf, le, uint32(1))
+	binary.Write(&buf, le, int32(42))
+	binary.Write(&buf, le, int32(10))
+	binary.Write(&buf, le, int32(2))
+	// record 2: id=5, views=100, clicks=50, ftr=0
+	binary.Write(&buf, le, uint32(5))
+	binary.Write(&buf, le, int32(100))
+	binary.Write(&buf, le, int32(50))
+	binary.Write(&buf, le, int32(0))
+
+	// fingerprint count = 0
+	binary.Write(&buf, le, uint32(0))
+
+	ss := newService()
+	require.NoError(t, ss.ReadBinarySnapshot(bytes.NewReader(buf.Bytes())))
+
+	data := ss.GetStatistic("default")
+	require.NotNil(t, data)
+	assert.Equal(t, 2, len(data))
+	assert.Equal(t, 42, data[1].Views)
+	assert.Equal(t, 10, data[1].Clicks)
+	assert.Equal(t, 2, data[1].Ftr)
+	assert.Equal(t, 0, data[1].Hits)        // V5 → 0
+	assert.Equal(t, 0, data[1].Engagements) // V5 → 0
+	assert.Equal(t, 100, data[5].Views)
+	assert.Equal(t, 50, data[5].Clicks)
+}
+
+func TestAggregateStats_HitsAndEngagements(t *testing.T) {
+	ss := newService()
+	ss.AddStats(&models.InputStats{
+		Views:       []string{"1"},
+		Hits:        []string{"1"},
+		Engagements: []string{"1"},
+		Channel:     DefaultChannel,
+	})
+	ss.AggregateStats()
+
+	data := ss.GetStatistic(DefaultChannel)
+	require.NotNil(t, data)
+	assert.Equal(t, 1, data[1].Views)
+	assert.Equal(t, 1, data[1].Hits)
+	assert.Equal(t, 1, data[1].Engagements)
+}
+
+func TestWriteBinarySnapshot_HitsEngagements_Roundtrip(t *testing.T) {
+	ss := newService()
+	ss.AddStats(&models.InputStats{
+		Views:       []string{"1"},
+		Hits:        []string{"1", "1", "1"},
+		Engagements: []string{"1", "1"},
+		Channel:     "default",
+	})
+	ss.AggregateStats()
+
+	var buf bytes.Buffer
+	require.NoError(t, ss.WriteBinarySnapshot(&buf))
+
+	ss2 := newService()
+	require.NoError(t, ss2.ReadBinarySnapshot(bytes.NewReader(buf.Bytes())))
+
+	data := ss2.GetStatistic("default")
+	require.NotNil(t, data)
+	assert.Equal(t, 1, data[1].Views)
+	assert.Equal(t, 3, data[1].Hits)
+	assert.Equal(t, 2, data[1].Engagements)
 }

@@ -1,6 +1,8 @@
 package statistic
 
 import (
+	"bytes"
+	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"io/fs"
@@ -318,10 +320,10 @@ func TestFileManager_V5Roundtrip_PreservesLastSeen(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	require.NoError(t, fm.SaveToFile(path))
 
-	// Verify file starts with binary magic "SSD5" (after identity compression)
+	// Verify file starts with binary magic "SSD6" (after identity compression)
 	raw, err := os.ReadFile(path)
 	require.NoError(t, err)
-	assert.Equal(t, "SSD5", string(raw[:4]), "saved file should have V5 binary magic")
+	assert.Equal(t, "SSD6", string(raw[:4]), "saved file should have V6 binary magic")
 
 	// Load into new service — lastSeen should be preserved
 	svc2 := services.NewStatisticService(defaultStatConfig())
@@ -532,4 +534,99 @@ func TestFileManager_V5_MultiChannel_Roundtrip(t *testing.T) {
 	fpData2 := svc2.GetByFingerprint("news", "fp2")
 	require.NotNil(t, fpData2)
 	assert.Equal(t, 1, fpData2[3].Views)
+}
+
+func TestFileManager_V5ToV6_Migration(t *testing.T) {
+	dir := t.TempDir()
+	pathV5 := filepath.Join(dir, "v5.dat")
+	pathV6 := filepath.Join(dir, "v6.dat")
+
+	// Build V5 binary data manually: SSD5 + version(5) + 1 channel with V5 stat records
+	var buf bytes.Buffer
+	le := binary.LittleEndian
+
+	buf.Write([]byte{'S', 'S', 'D', '5'})
+	buf.WriteByte(5)
+
+	// channel count = 1
+	binary.Write(&buf, le, uint32(1))
+	// channel name "default"
+	binary.Write(&buf, le, uint16(7))
+	buf.WriteString("default")
+
+	// stat records count = 1 (V5 format: id + views + clicks + ftr, no hits/engagements)
+	binary.Write(&buf, le, uint32(1))
+	binary.Write(&buf, le, uint32(1)) // id=1
+	binary.Write(&buf, le, int32(42)) // views
+	binary.Write(&buf, le, int32(10)) // clicks
+	binary.Write(&buf, le, int32(2))  // ftr
+
+	// fingerprint count = 0
+	binary.Write(&buf, le, uint32(0))
+
+	require.NoError(t, os.WriteFile(pathV5, buf.Bytes(), 0644))
+
+	// Load V5 file
+	comp := &testutil.MockCompressor{}
+	logger := &testutil.MockLogger{}
+	svc := services.NewStatisticService(defaultStatConfig())
+	fm := NewFileManager(comp, svc, logger)
+	require.NoError(t, fm.LoadFromFile(pathV5))
+
+	// Verify data loaded with hits/engagements = 0
+	data := svc.GetStatistic("default")
+	require.NotNil(t, data)
+	assert.Equal(t, 42, data[1].Views)
+	assert.Equal(t, 10, data[1].Clicks)
+	assert.Equal(t, 2, data[1].Ftr)
+	assert.Equal(t, 0, data[1].Hits)
+	assert.Equal(t, 0, data[1].Engagements)
+
+	// Save as V6
+	require.NoError(t, fm.SaveToFile(pathV6))
+
+	// Verify V6 magic
+	raw, err := os.ReadFile(pathV6)
+	require.NoError(t, err)
+	assert.Equal(t, "SSD6", string(raw[:4]))
+
+	// Load V6 and verify roundtrip
+	svc2 := services.NewStatisticService(defaultStatConfig())
+	fm2 := NewFileManager(comp, svc2, logger)
+	require.NoError(t, fm2.LoadFromFile(pathV6))
+
+	data2 := svc2.GetStatistic("default")
+	require.NotNil(t, data2)
+	assert.Equal(t, 42, data2[1].Views)
+	assert.Equal(t, 10, data2[1].Clicks)
+	assert.Equal(t, 2, data2[1].Ftr)
+}
+
+func TestFileManager_V6_HitsEngagements_Roundtrip(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "v6he.dat")
+
+	svc := services.NewStatisticService(defaultStatConfig())
+	svc.AddStats(&models.InputStats{
+		Views:       []string{"1"},
+		Hits:        []string{"1", "1", "1"},
+		Engagements: []string{"1", "1"},
+		Channel:     "default",
+	})
+	svc.AggregateStats()
+
+	comp := &testutil.MockCompressor{}
+	logger := &testutil.MockLogger{}
+	fm := NewFileManager(comp, svc, logger)
+	require.NoError(t, fm.SaveToFile(path))
+
+	svc2 := services.NewStatisticService(defaultStatConfig())
+	fm2 := NewFileManager(comp, svc2, logger)
+	require.NoError(t, fm2.LoadFromFile(path))
+
+	data := svc2.GetStatistic("default")
+	require.NotNil(t, data)
+	assert.Equal(t, 1, data[1].Views)
+	assert.Equal(t, 3, data[1].Hits)
+	assert.Equal(t, 2, data[1].Engagements)
 }
