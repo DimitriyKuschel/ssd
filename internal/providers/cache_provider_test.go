@@ -11,12 +11,12 @@ import (
 // local mock logger to avoid import cycle with testutil
 type cacheTestLogger struct{}
 
-func (m *cacheTestLogger) Errorf(_ TypeEnum, _ string, _ ...interface{}) {}
-func (m *cacheTestLogger) Warnf(_ TypeEnum, _ string, _ ...interface{})  {}
-func (m *cacheTestLogger) Debugf(_ TypeEnum, _ string, _ ...interface{}) {}
-func (m *cacheTestLogger) Infof(_ TypeEnum, _ string, _ ...interface{})  {}
-func (m *cacheTestLogger) Fatalf(_ TypeEnum, _ string, _ ...interface{}) {}
-func (m *cacheTestLogger) Close()                                        {}
+func (m *cacheTestLogger) Errorf(_ TypeEnum, _ string, _ ...any) {}
+func (m *cacheTestLogger) Warnf(_ TypeEnum, _ string, _ ...any)  {}
+func (m *cacheTestLogger) Debugf(_ TypeEnum, _ string, _ ...any) {}
+func (m *cacheTestLogger) Infof(_ TypeEnum, _ string, _ ...any)  {}
+func (m *cacheTestLogger) Fatalf(_ TypeEnum, _ string, _ ...any) {}
+func (m *cacheTestLogger) Close()                                {}
 
 func cacheConfig(enabled bool, size int, interval time.Duration) *structures.Config {
 	return &structures.Config{

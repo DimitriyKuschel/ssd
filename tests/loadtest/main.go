@@ -2,13 +2,14 @@ package main
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"io"
 	"math/rand"
 	"net"
 	"net/http"
-	"sort"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -58,7 +59,7 @@ func main() {
 
 	// Wait for server
 	fmt.Print("Waiting for server... ")
-	for i := 0; i < 30; i++ {
+	for i := range 30 {
 		resp, err := httpClient.Get(baseURL + "/channels")
 		if err == nil {
 			io.Copy(io.Discard, resp.Body)
@@ -97,7 +98,7 @@ func main() {
 		case r < 0.94:
 			return doGetFingerprint(rng)
 		default:
-			return doGetChannels()
+			return doGetChannels(rng)
 		}
 	})
 
@@ -115,7 +116,7 @@ func main() {
 		case r < 0.80:
 			return doGetFingerprint(rng)
 		default:
-			return doGetChannels()
+			return doGetChannels(rng)
 		}
 	})
 }
@@ -126,10 +127,9 @@ func runPhase(duration time.Duration, workFn func(rng *rand.Rand) result) {
 	var totalOps atomic.Int64
 	stop := make(chan struct{})
 
-	for i := 0; i < numWorkers; i++ {
-		wg.Add(1)
-		go func(seed int64) {
-			defer wg.Done()
+	for i := range numWorkers {
+		seed := rand.Int63() + int64(i)
+		wg.Go(func() {
 			rng := rand.New(rand.NewSource(seed))
 			for {
 				select {
@@ -141,7 +141,7 @@ func runPhase(duration time.Duration, workFn func(rng *rand.Rand) result) {
 					results <- r
 				}
 			}
-		}(rand.Int63() + int64(i))
+		})
 	}
 
 	allResults := make(map[string]*stats)
@@ -179,7 +179,7 @@ func printResults(allResults map[string]*stats, duration time.Duration) {
 	for ep := range allResults {
 		endpoints = append(endpoints, ep)
 	}
-	sort.Strings(endpoints)
+	slices.Sort(endpoints)
 
 	fmt.Printf("\n  %-22s %8s %6s %10s %10s %10s %10s\n",
 		"Endpoint", "Reqs", "Errs", "Avg", "P50", "P95", "P99")
@@ -190,8 +190,8 @@ func printResults(allResults map[string]*stats, duration time.Duration) {
 		totalOps += s.count
 		totalErrors += s.errors
 
-		sort.Slice(s.latencies, func(i, j int) bool {
-			return s.latencies[i] < s.latencies[j]
+		slices.SortFunc(s.latencies, func(a, b time.Duration) int {
+			return cmp.Compare(a, b)
 		})
 
 		avg := avgDuration(s.latencies)
@@ -221,30 +221,58 @@ func doPost(rng *rand.Rand) result {
 		clicks[i] = fmt.Sprintf("%d", rng.Intn(numIDs)+1)
 	}
 
-	body := map[string]interface{}{
+	body := map[string]any{
 		"v": views,
 		"c": clicks,
 		"f": fmt.Sprintf("fp_%d", rng.Intn(numFingerprints)),
 	}
+
+	// 40% of requests include hits/engagements
+	if rng.Float64() < 0.4 {
+		nHits := rng.Intn(3) + 1
+		nEngagements := rng.Intn(2)
+		hits := make([]string, nHits)
+		engagements := make([]string, nEngagements)
+		for i := range hits {
+			hits[i] = fmt.Sprintf("%d", rng.Intn(numIDs)+1)
+		}
+		for i := range engagements {
+			engagements[i] = fmt.Sprintf("%d", rng.Intn(numIDs)+1)
+		}
+		body["h"] = hits
+		body["e"] = engagements
+	}
+
 	if rng.Float64() < 0.6 {
 		body["ch"] = channels[rng.Intn(len(channels))]
 	}
 
+	// Randomly use POST /hit instead of POST /
+	endpoint := "/"
+	if rng.Float64() < 0.3 {
+		endpoint = "/hit"
+	}
+
 	data, _ := json.Marshal(body)
 	start := time.Now()
-	resp, err := httpClient.Post(baseURL+"/", "application/json", bytes.NewReader(data))
+	resp, err := httpClient.Post(baseURL+endpoint, "application/json", bytes.NewReader(data))
 	lat := time.Since(start)
 	if err != nil {
-		return result{"POST /", 0, lat, true}
+		return result{"POST " + endpoint, 0, lat, true}
 	}
 	io.Copy(io.Discard, resp.Body)
 	resp.Body.Close()
-	return result{"POST /", resp.StatusCode, lat, resp.StatusCode != 201}
+	return result{"POST " + endpoint, resp.StatusCode, lat, resp.StatusCode != 201}
 }
 
 func doGetList(rng *rand.Rand) result {
 	ch := channels[rng.Intn(len(channels))]
 	url := fmt.Sprintf("%s/list?ch=%s", baseURL, ch)
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(100) + 1
+		offset := rng.Intn(200)
+		url = fmt.Sprintf("%s&limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
 	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
@@ -259,6 +287,11 @@ func doGetList(rng *rand.Rand) result {
 func doGetFingerprints(rng *rand.Rand) result {
 	ch := channels[rng.Intn(len(channels))]
 	url := fmt.Sprintf("%s/fingerprints?ch=%s", baseURL, ch)
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(50) + 1
+		offset := rng.Intn(50)
+		url = fmt.Sprintf("%s&limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
 	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
@@ -274,6 +307,11 @@ func doGetFingerprint(rng *rand.Rand) result {
 	ch := channels[rng.Intn(len(channels))]
 	fp := fmt.Sprintf("fp_%d", rng.Intn(numFingerprints))
 	url := fmt.Sprintf("%s/fingerprint?ch=%s&f=%s", baseURL, ch, fp)
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(100) + 1
+		offset := rng.Intn(200)
+		url = fmt.Sprintf("%s&limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
 	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
@@ -285,9 +323,15 @@ func doGetFingerprint(rng *rand.Rand) result {
 	return result{"GET /fingerprint", resp.StatusCode, lat, resp.StatusCode != 200}
 }
 
-func doGetChannels() result {
+func doGetChannels(rng *rand.Rand) result {
+	url := baseURL + "/channels"
+	if rng.Float64() < 0.3 {
+		limit := rng.Intn(5) + 1
+		offset := rng.Intn(3)
+		url = fmt.Sprintf("%s?limit=%d&offset=%d", url, limit, offset)
+	}
 	start := time.Now()
-	resp, err := httpClient.Get(baseURL + "/channels")
+	resp, err := httpClient.Get(url)
 	lat := time.Since(start)
 	if err != nil {
 		return result{"GET /channels", 0, lat, true}
@@ -328,7 +372,7 @@ func fmtDur(d time.Duration) string {
 
 func repeat(s string, n int) string {
 	out := ""
-	for i := 0; i < n; i++ {
+	for range n {
 		out += s
 	}
 	return out

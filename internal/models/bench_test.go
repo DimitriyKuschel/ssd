@@ -28,7 +28,7 @@ func BenchmarkBuildData(b *testing.B) {
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				fr.buildData()
 			}
 		})
@@ -40,13 +40,13 @@ func BenchmarkGetData_OldStyle(b *testing.B) {
 	for _, n := range []int{100, 500, 1000} {
 		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
 			data := make(map[int]*StatRecord, n)
-			for i := 0; i < n; i++ {
+			for i := range n {
 				data[i] = &StatRecord{Views: 10, Clicks: 3, Ftr: 1}
 			}
 
 			b.ResetTimer()
 			b.ReportAllocs()
-			for i := 0; i < b.N; i++ {
+			for b.Loop() {
 				copyMap := make(map[int]*StatRecord, len(data))
 				for k, v := range data {
 					copyMap[k] = &StatRecord{Views: v.Views, Clicks: v.Clicks, Ftr: v.Ftr}

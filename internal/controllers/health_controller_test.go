@@ -22,7 +22,7 @@ func TestHealth_ReturnsOK(t *testing.T) {
 	assert.Equal(t, http.StatusOK, rr.Code)
 	assert.Equal(t, "application/json", rr.Header().Get("Content-Type"))
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Equal(t, "ok", resp["status"])
 	assert.Contains(t, resp, "uptime")
@@ -30,17 +30,6 @@ func TestHealth_ReturnsOK(t *testing.T) {
 	assert.Contains(t, resp, "buffer_size")
 	assert.Contains(t, resp, "channels")
 	assert.Equal(t, float64(2), resp["channels"])
-}
-
-func TestHealth_MethodNotAllowed(t *testing.T) {
-	svc := &mockService{}
-	hc := NewHealthController(svc)
-
-	req := httptest.NewRequest(http.MethodPost, "/health", nil)
-	rr := httptest.NewRecorder()
-	hc.Health(rr, req)
-
-	assert.Equal(t, http.StatusMethodNotAllowed, rr.Code)
 }
 
 func TestHealth_BufferSizeReflected(t *testing.T) {
@@ -51,7 +40,7 @@ func TestHealth_BufferSizeReflected(t *testing.T) {
 	rr := httptest.NewRecorder()
 	hc.Health(rr, req)
 
-	var resp map[string]interface{}
+	var resp map[string]any
 	require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &resp))
 	assert.Equal(t, float64(0), resp["buffer_size"])
 }

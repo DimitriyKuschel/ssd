@@ -29,11 +29,11 @@ const (
 )
 
 type Logger interface {
-	Errorf(t TypeEnum, format string, args ...interface{})
-	Warnf(t TypeEnum, format string, args ...interface{})
-	Debugf(t TypeEnum, format string, args ...interface{})
-	Infof(t TypeEnum, format string, args ...interface{})
-	Fatalf(t TypeEnum, format string, args ...interface{})
+	Errorf(t TypeEnum, format string, args ...any)
+	Warnf(t TypeEnum, format string, args ...any)
+	Debugf(t TypeEnum, format string, args ...any)
+	Infof(t TypeEnum, format string, args ...any)
+	Fatalf(t TypeEnum, format string, args ...any)
 	Close()
 }
 
@@ -66,21 +66,9 @@ type Zerolog struct {
 
 func (z *Zerolog) init() error {
 
-	switch z.conf.Logger.Level {
-	case "trace":
-		zerolog.SetGlobalLevel(zerolog.TraceLevel)
-	case "debug":
-		zerolog.SetGlobalLevel(zerolog.DebugLevel)
-	case "info":
-		zerolog.SetGlobalLevel(zerolog.InfoLevel)
-	case "warn":
-		zerolog.SetGlobalLevel(zerolog.WarnLevel)
-	case "error":
-		zerolog.SetGlobalLevel(zerolog.ErrorLevel)
-	case "fatal":
-		zerolog.SetGlobalLevel(zerolog.FatalLevel)
-	case "panic":
-		zerolog.SetGlobalLevel(zerolog.PanicLevel)
+	level, err := zerolog.ParseLevel(z.conf.Logger.Level)
+	if err == nil {
+		zerolog.SetGlobalLevel(level)
 	}
 
 	if z.conf.Debug {
@@ -115,32 +103,32 @@ func (z *Zerolog) init() error {
 	return nil
 }
 
-func (z *Zerolog) Errorf(t TypeEnum, format string, args ...interface{}) {
+func (z *Zerolog) Errorf(t TypeEnum, format string, args ...any) {
 	logger := z.loggers[t].logger
 	logger.Error().Msgf(format, args...)
 }
 
-func (z *Zerolog) Warnf(t TypeEnum, format string, args ...interface{}) {
+func (z *Zerolog) Warnf(t TypeEnum, format string, args ...any) {
 	logger := z.loggers[t].logger
 	z.write(logger.Warn(), format, args...)
 }
 
-func (z *Zerolog) Debugf(t TypeEnum, format string, args ...interface{}) {
+func (z *Zerolog) Debugf(t TypeEnum, format string, args ...any) {
 	logger := z.loggers[t].logger
 	z.write(logger.Debug(), format, args...)
 }
 
-func (z *Zerolog) Infof(t TypeEnum, format string, args ...interface{}) {
+func (z *Zerolog) Infof(t TypeEnum, format string, args ...any) {
 	logger := z.loggers[t].logger
 	z.write(logger.Info(), format, args...)
 }
 
-func (z *Zerolog) Fatalf(t TypeEnum, format string, args ...interface{}) {
+func (z *Zerolog) Fatalf(t TypeEnum, format string, args ...any) {
 	logger := z.loggers[t].logger
 	z.write(logger.Fatal(), format, args...)
 }
 
-func (z *Zerolog) write(event *zerolog.Event, format string, args ...interface{}) {
+func (z *Zerolog) write(event *zerolog.Event, format string, args ...any) {
 	if len(args) == 0 {
 		event.Msg(format)
 		return

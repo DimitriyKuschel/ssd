@@ -1,6 +1,8 @@
 package statistic
 
 import (
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -255,7 +257,7 @@ func (cs *ColdStorage) loadColdFileFromDisk(channel string) *ColdFile {
 	path := cs.coldFilePath(channel)
 	data, err := os.ReadFile(path)
 	if err != nil {
-		if !os.IsNotExist(err) {
+		if !errors.Is(err, fs.ErrNotExist) {
 			cs.logger.Errorf(providers.TypeApp, "Failed to read cold file %s: %s", path, err)
 		}
 		return nil

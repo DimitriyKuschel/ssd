@@ -6,9 +6,20 @@ import (
 )
 
 type StatRecord struct {
-	Views  int
-	Clicks int
-	Ftr    int
+	Views       int
+	Clicks      int
+	Ftr         int
+	Hits        int `json:"h"`
+	Engagements int `json:"e"`
+	BounceRate  int `json:"br"`
+}
+
+// ComputeBounceRate sets BounceRate from Hits and Engagements.
+// Called during GetData() on copies — never persisted.
+func (sr *StatRecord) ComputeBounceRate() {
+	if sr.Hits > 0 {
+		sr.BounceRate = max((sr.Hits-sr.Engagements)*100/sr.Hits, 0)
+	}
 }
 
 type Statistic struct {
@@ -23,7 +34,9 @@ func (sm *Statistic) Get(key int) (*StatRecord, bool) {
 	if !ok {
 		return nil, false
 	}
-	return &StatRecord{Views: val.Views, Clicks: val.Clicks, Ftr: val.Ftr}, true
+	rec := &StatRecord{Views: val.Views, Clicks: val.Clicks, Ftr: val.Ftr, Hits: val.Hits, Engagements: val.Engagements}
+	rec.ComputeBounceRate()
+	return rec, true
 }
 
 func (sm *Statistic) Set(key int, val *StatRecord) {
@@ -50,11 +63,15 @@ func (sm *Statistic) GetData() map[int]*StatRecord {
 
 	copyMap := make(map[int]*StatRecord, len(sm.Data))
 	for k, v := range sm.Data {
-		copyMap[k] = &StatRecord{
-			Views:  v.Views,
-			Clicks: v.Clicks,
-			Ftr:    v.Ftr,
+		rec := &StatRecord{
+			Views:       v.Views,
+			Clicks:      v.Clicks,
+			Ftr:         v.Ftr,
+			Hits:        v.Hits,
+			Engagements: v.Engagements,
 		}
+		rec.ComputeBounceRate()
+		copyMap[k] = rec
 	}
 	return copyMap
 }
@@ -80,6 +97,8 @@ func (sm *Statistic) IncStats(data *InputStats) {
 			if existing.Views > 512 {
 				existing.Views = (existing.Views + 1) >> 1
 				existing.Clicks = (existing.Clicks + 1) >> 1
+				existing.Hits = (existing.Hits + 1) >> 1
+				existing.Engagements = (existing.Engagements + 1) >> 1
 				existing.Ftr++
 			}
 		} else {
@@ -98,6 +117,34 @@ func (sm *Statistic) IncStats(data *InputStats) {
 			existing.Clicks++
 		} else {
 			sm.Data[key] = &StatRecord{Clicks: 1}
+		}
+	}
+	for _, v := range data.Hits {
+		if v == "" {
+			continue
+		}
+		key, err := strconv.Atoi(v)
+		if err != nil {
+			continue
+		}
+		if existing, ok := sm.Data[key]; ok {
+			existing.Hits++
+		} else {
+			sm.Data[key] = &StatRecord{Hits: 1}
+		}
+	}
+	for _, v := range data.Engagements {
+		if v == "" {
+			continue
+		}
+		key, err := strconv.Atoi(v)
+		if err != nil {
+			continue
+		}
+		if existing, ok := sm.Data[key]; ok {
+			existing.Engagements++
+		} else {
+			sm.Data[key] = &StatRecord{Engagements: 1}
 		}
 	}
 }

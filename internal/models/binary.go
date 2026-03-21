@@ -34,7 +34,7 @@ func readString(r io.Reader) (string, error) {
 }
 
 // writeStatRecords writes a map[uint32]StatRecord in binary format.
-// Format: count(uint32) + for each: id(uint32) views(int32) clicks(int32) ftr(int32)
+// Format: count(uint32) + for each: id(uint32) views(int32) clicks(int32) ftr(int32) hits(int32) engagements(int32)
 func writeStatRecords(w io.Writer, data map[uint32]StatRecord) error {
 	if err := binary.Write(w, byteOrder, uint32(len(data))); err != nil {
 		return err
@@ -52,12 +52,51 @@ func writeStatRecords(w io.Writer, data map[uint32]StatRecord) error {
 		if err := binary.Write(w, byteOrder, int32(rec.Ftr)); err != nil {
 			return err
 		}
+		if err := binary.Write(w, byteOrder, int32(rec.Hits)); err != nil {
+			return err
+		}
+		if err := binary.Write(w, byteOrder, int32(rec.Engagements)); err != nil {
+			return err
+		}
 	}
 	return nil
 }
 
-// readStatRecords reads a map[uint32]StatRecord from binary format.
+// readStatRecords reads a map[uint32]StatRecord from V6 binary format.
 func readStatRecords(r io.Reader) (map[uint32]StatRecord, error) {
+	var count uint32
+	if err := binary.Read(r, byteOrder, &count); err != nil {
+		return nil, err
+	}
+	data := make(map[uint32]StatRecord, count)
+	for i := uint32(0); i < count; i++ {
+		var id uint32
+		var views, clicks, ftr, hits, engagements int32
+		if err := binary.Read(r, byteOrder, &id); err != nil {
+			return nil, err
+		}
+		if err := binary.Read(r, byteOrder, &views); err != nil {
+			return nil, err
+		}
+		if err := binary.Read(r, byteOrder, &clicks); err != nil {
+			return nil, err
+		}
+		if err := binary.Read(r, byteOrder, &ftr); err != nil {
+			return nil, err
+		}
+		if err := binary.Read(r, byteOrder, &hits); err != nil {
+			return nil, err
+		}
+		if err := binary.Read(r, byteOrder, &engagements); err != nil {
+			return nil, err
+		}
+		data[id] = StatRecord{Views: int(views), Clicks: int(clicks), Ftr: int(ftr), Hits: int(hits), Engagements: int(engagements)}
+	}
+	return data, nil
+}
+
+// readStatRecordsV5 reads a map[uint32]StatRecord from V5 binary format (without hits/engagements).
+func readStatRecordsV5(r io.Reader) (map[uint32]StatRecord, error) {
 	var count uint32
 	if err := binary.Read(r, byteOrder, &count); err != nil {
 		return nil, err
@@ -132,8 +171,7 @@ func writeFingerprintRecord(w io.Writer, fr *FingerprintRecord) error {
 	return writeStatRecords(w, fr.counts)
 }
 
-// readFingerprintRecord reads a FingerprintRecord from binary format,
-// creating the record directly without going through dataToFingerprintRecord.
+// readFingerprintRecord reads a FingerprintRecord from V6 binary format.
 func readFingerprintRecord(r io.Reader) (*FingerprintRecord, error) {
 	var nanos int64
 	if err := binary.Read(r, byteOrder, &nanos); err != nil {
@@ -151,6 +189,36 @@ func readFingerprintRecord(r io.Reader) (*FingerprintRecord, error) {
 	}
 
 	counts, err := readStatRecords(r)
+	if err != nil {
+		return nil, err
+	}
+
+	return &FingerprintRecord{
+		viewed:   viewed,
+		clicked:  clicked,
+		counts:   counts,
+		lastSeen: time.Unix(0, nanos),
+	}, nil
+}
+
+// readFingerprintRecordV5 reads a FingerprintRecord from V5 binary format (without hits/engagements in counts).
+func readFingerprintRecordV5(r io.Reader) (*FingerprintRecord, error) {
+	var nanos int64
+	if err := binary.Read(r, byteOrder, &nanos); err != nil {
+		return nil, err
+	}
+
+	viewed, err := readBitmap(r)
+	if err != nil {
+		return nil, err
+	}
+
+	clicked, err := readBitmap(r)
+	if err != nil {
+		return nil, err
+	}
+
+	counts, err := readStatRecordsV5(r)
 	if err != nil {
 		return nil, err
 	}

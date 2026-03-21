@@ -1,8 +1,11 @@
 package controllers
 
 import (
-	json "github.com/goccy/go-json"
+	"cmp"
 	"net/http"
+
+	json "github.com/goccy/go-json"
+
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"ssd/internal/services"
@@ -25,11 +28,7 @@ func NewApiController(logger providers.Logger, service services.StatisticService
 }
 
 func getChannel(r *http.Request) string {
-	ch := r.URL.Query().Get("ch")
-	if ch == "" {
-		return services.DefaultChannel
-	}
-	return ch
+	return cmp.Or(r.URL.Query().Get("ch"), services.DefaultChannel)
 }
 
 func (ac *ApiController) serveFromCacheOrCompute(w http.ResponseWriter, cacheKey string, compute func() (any, error)) {
@@ -76,28 +75,56 @@ func (ac *ApiController) ReceiveStats(w http.ResponseWriter, r *http.Request) {
 
 func (ac *ApiController) GetStats(w http.ResponseWriter, r *http.Request) {
 	ch := getChannel(r)
-	ac.serveFromCacheOrCompute(w, "list:"+ch, func() (any, error) {
-		return ac.service.GetStatistic(ch), nil
+	limit, offset := parsePagination(r)
+	cacheKey := paginatedCacheKey("list:"+ch, limit, offset)
+	ac.serveFromCacheOrCompute(w, cacheKey, func() (any, error) {
+		data := ac.service.GetStatistic(ch)
+		if hasPagination(limit, offset) {
+			page, total := paginateIntMap(data, limit, offset)
+			return paginatedResponse{Data: page, Total: total, Limit: limit, Offset: offset}, nil
+		}
+		return data, nil
 	})
 }
 
 func (ac *ApiController) GetPersonalStats(w http.ResponseWriter, r *http.Request) {
 	ch := getChannel(r)
-	ac.serveFromCacheOrCompute(w, "fps:"+ch, func() (any, error) {
-		return ac.service.GetPersonalStatistic(ch), nil
+	limit, offset := parsePagination(r)
+	cacheKey := paginatedCacheKey("fps:"+ch, limit, offset)
+	ac.serveFromCacheOrCompute(w, cacheKey, func() (any, error) {
+		data := ac.service.GetPersonalStatistic(ch)
+		if hasPagination(limit, offset) {
+			page, total := paginateStringMap(data, limit, offset)
+			return paginatedResponse{Data: page, Total: total, Limit: limit, Offset: offset}, nil
+		}
+		return data, nil
 	})
 }
 
 func (ac *ApiController) GetByFingerprint(w http.ResponseWriter, r *http.Request) {
 	ch := getChannel(r)
 	fp := r.URL.Query().Get("f")
-	ac.serveFromCacheOrCompute(w, "fp:"+ch+":"+fp, func() (any, error) {
-		return ac.service.GetByFingerprint(ch, fp), nil
+	limit, offset := parsePagination(r)
+	cacheKey := paginatedCacheKey("fp:"+ch+":"+fp, limit, offset)
+	ac.serveFromCacheOrCompute(w, cacheKey, func() (any, error) {
+		data := ac.service.GetByFingerprint(ch, fp)
+		if hasPagination(limit, offset) {
+			page, total := paginateIntMap(data, limit, offset)
+			return paginatedResponse{Data: page, Total: total, Limit: limit, Offset: offset}, nil
+		}
+		return data, nil
 	})
 }
 
 func (ac *ApiController) GetChannels(w http.ResponseWriter, r *http.Request) {
-	ac.serveFromCacheOrCompute(w, "channels", func() (any, error) {
-		return ac.service.GetChannels(), nil
+	limit, offset := parsePagination(r)
+	cacheKey := paginatedCacheKey("channels", limit, offset)
+	ac.serveFromCacheOrCompute(w, cacheKey, func() (any, error) {
+		data := ac.service.GetChannels()
+		if hasPagination(limit, offset) {
+			page, total := paginateSlice(data, limit, offset)
+			return paginatedResponse{Data: page, Total: total, Limit: limit, Offset: offset}, nil
+		}
+		return data, nil
 	})
 }

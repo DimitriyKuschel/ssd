@@ -2,13 +2,17 @@ package statistic
 
 import (
 	"bytes"
-	json "github.com/goccy/go-json"
+	"errors"
+	"io/fs"
 	"os"
+	"time"
+
+	json "github.com/goccy/go-json"
+
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"ssd/internal/services"
 	"ssd/internal/statistic/interfaces"
-	"time"
 )
 
 type FileManager struct {
@@ -69,7 +73,7 @@ func (f *FileManager) Close() {
 func (f *FileManager) LoadFromFile(fileName string) error {
 	data, err := os.ReadFile(fileName)
 	if err != nil {
-		if os.IsNotExist(err) {
+		if errors.Is(err, fs.ErrNotExist) {
 			return nil
 		}
 		return err
@@ -80,10 +84,10 @@ func (f *FileManager) LoadFromFile(fileName string) error {
 		return err
 	}
 
-	// V5 binary format? Check magic bytes "SSD5"
-	if len(decompressedData) >= 4 && string(decompressedData[:4]) == "SSD5" {
+	// V6/V5 binary format? Check magic bytes "SSD6" or "SSD5"
+	if len(decompressedData) >= 4 && (string(decompressedData[:4]) == "SSD6" || string(decompressedData[:4]) == "SSD5") {
 		if err := f.service.ReadBinarySnapshot(bytes.NewReader(decompressedData)); err != nil {
-			f.logger.Warnf(providers.TypeApp, "V5 binary parse failed, trying JSON fallback: %v", err)
+			f.logger.Warnf(providers.TypeApp, "Binary parse failed, trying JSON fallback: %v", err)
 		} else {
 			return nil
 		}

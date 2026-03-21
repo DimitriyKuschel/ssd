@@ -18,12 +18,12 @@ import (
 
 type mockLogger struct{}
 
-func (m *mockLogger) Errorf(_ providers.TypeEnum, _ string, _ ...interface{}) {}
-func (m *mockLogger) Warnf(_ providers.TypeEnum, _ string, _ ...interface{})  {}
-func (m *mockLogger) Debugf(_ providers.TypeEnum, _ string, _ ...interface{}) {}
-func (m *mockLogger) Infof(_ providers.TypeEnum, _ string, _ ...interface{})  {}
-func (m *mockLogger) Fatalf(_ providers.TypeEnum, _ string, _ ...interface{}) {}
-func (m *mockLogger) Close()                                                  {}
+func (m *mockLogger) Errorf(_ providers.TypeEnum, _ string, _ ...any) {}
+func (m *mockLogger) Warnf(_ providers.TypeEnum, _ string, _ ...any)  {}
+func (m *mockLogger) Debugf(_ providers.TypeEnum, _ string, _ ...any) {}
+func (m *mockLogger) Infof(_ providers.TypeEnum, _ string, _ ...any)  {}
+func (m *mockLogger) Fatalf(_ providers.TypeEnum, _ string, _ ...any) {}
+func (m *mockLogger) Close()                                          {}
 
 type mockService struct {
 	addCalls      []*models.InputStats
@@ -84,6 +84,22 @@ func TestReceiveStats_ValidPayload(t *testing.T) {
 	assert.Equal(t, "news", svc.addCalls[0].Channel)
 	assert.Equal(t, "fp1", svc.addCalls[0].Fingerprint)
 	assert.Equal(t, []string{"1", "2"}, svc.addCalls[0].Views)
+}
+
+func TestReceiveStats_HitsAndEngagements(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"h":["1","2"],"e":["1"],"f":"fp1"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	require.Len(t, svc.addCalls, 1)
+	assert.Equal(t, []string{"1", "2"}, svc.addCalls[0].Hits)
+	assert.Equal(t, []string{"1"}, svc.addCalls[0].Engagements)
 }
 
 func TestReceiveStats_InvalidJSON(t *testing.T) {

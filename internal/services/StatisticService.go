@@ -1,10 +1,12 @@
 package services
 
 import (
+	"cmp"
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sort"
+	"maps"
+	"slices"
 	"ssd/internal/models"
 	"ssd/internal/structures"
 	"sync"
@@ -80,12 +82,7 @@ func (ss *StatisticService) getOrCreateChannel(name string) *channelData {
 }
 
 func (ss *StatisticService) rebuildChannelCache() {
-	channels := make([]string, 0, len(ss.channels))
-	for name := range ss.channels {
-		channels = append(channels, name)
-	}
-	sort.Strings(channels)
-	ss.cachedChannels = channels
+	ss.cachedChannels = slices.Sorted(maps.Keys(ss.channels))
 }
 
 func (ss *StatisticService) AddStats(data *models.InputStats) {
@@ -110,10 +107,7 @@ func (ss *StatisticService) AggregateStats() {
 	ss.mu.Unlock()
 
 	for _, v := range data {
-		chName := v.Channel
-		if chName == "" {
-			chName = DefaultChannel
-		}
+		chName := cmp.Or(v.Channel, DefaultChannel)
 		ch := ss.getOrCreateChannel(chName)
 		if ch == nil {
 			continue
@@ -197,8 +191,8 @@ func (ss *StatisticService) PutChannelDataV4(channel string, trend map[int]*mode
 }
 
 var (
-	binaryMagic   = [4]byte{'S', 'S', 'D', '5'}
-	binaryVersion = uint8(5)
+	binaryMagic   = [4]byte{'S', 'S', 'D', '6'}
+	binaryVersion = uint8(6)
 	binByteOrder  = binary.LittleEndian
 )
 
@@ -237,15 +231,25 @@ func (ss *StatisticService) ReadBinarySnapshot(r io.Reader) error {
 	if _, err := io.ReadFull(r, magic[:]); err != nil {
 		return err
 	}
-	if magic != binaryMagic {
-		return fmt.Errorf("invalid binary magic: %q", magic)
-	}
+
 	var version uint8
-	if err := binary.Read(r, binByteOrder, &version); err != nil {
-		return err
-	}
-	if version != 5 {
-		return fmt.Errorf("unsupported binary version: %d", version)
+	switch magic {
+	case binaryMagic: // SSD6
+		if err := binary.Read(r, binByteOrder, &version); err != nil {
+			return err
+		}
+		if version != 6 {
+			return fmt.Errorf("unsupported binary version: %d", version)
+		}
+	case [4]byte{'S', 'S', 'D', '5'}:
+		if err := binary.Read(r, binByteOrder, &version); err != nil {
+			return err
+		}
+		if version != 5 {
+			return fmt.Errorf("unsupported binary version: %d", version)
+		}
+	default:
+		return fmt.Errorf("invalid binary magic: %q", magic)
 	}
 
 	var channelCount uint32
@@ -267,11 +271,21 @@ func (ss *StatisticService) ReadBinarySnapshot(r io.Reader) error {
 		if ch == nil {
 			return fmt.Errorf("failed to create channel %q", name)
 		}
-		if err := ch.stats.ReadBinaryFrom(r); err != nil {
-			return fmt.Errorf("channel %q trend stats: %w", name, err)
-		}
-		if err := ch.personalStats.ReadBinaryFrom(r); err != nil {
-			return fmt.Errorf("channel %q personal stats: %w", name, err)
+
+		if version == 5 {
+			if err := ch.stats.ReadBinaryFromV5(r); err != nil {
+				return fmt.Errorf("channel %q trend stats: %w", name, err)
+			}
+			if err := ch.personalStats.ReadBinaryFromV5(r); err != nil {
+				return fmt.Errorf("channel %q personal stats: %w", name, err)
+			}
+		} else {
+			if err := ch.stats.ReadBinaryFrom(r); err != nil {
+				return fmt.Errorf("channel %q trend stats: %w", name, err)
+			}
+			if err := ch.personalStats.ReadBinaryFrom(r); err != nil {
+				return fmt.Errorf("channel %q personal stats: %w", name, err)
+			}
 		}
 	}
 	return nil

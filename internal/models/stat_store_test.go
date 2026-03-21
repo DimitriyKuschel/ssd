@@ -202,7 +202,7 @@ func TestStatStore_Eviction_TriggersAtMax(t *testing.T) {
 	s := NewStatStore(10, 50) // max 10 records, evict 50%
 
 	// Fill to max
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		s.Set(i, &StatRecord{Views: i + 1})
 	}
 	assert.Equal(t, 10, s.Len())
@@ -249,7 +249,7 @@ func TestStatStore_Eviction_RemovesLowestViews(t *testing.T) {
 func TestStatStore_Eviction_UnlimitedWhenMinusOne(t *testing.T) {
 	s := NewStatStore(-1, 10) // unlimited
 
-	for i := 0; i < 10000; i++ {
+	for i := range 10000 {
 		s.Set(i, &StatRecord{Views: 1})
 	}
 	assert.Equal(t, 10000, s.Len())
@@ -308,19 +308,15 @@ func TestStatStore_ConcurrentAccess(t *testing.T) {
 	s := newStatStore()
 	var wg sync.WaitGroup
 
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			s.IncStats(&InputStats{Views: []string{"1", "2"}, Clicks: []string{"1"}})
-		}()
+		})
 	}
-	for i := 0; i < 100; i++ {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+	for range 100 {
+		wg.Go(func() {
 			s.GetData()
-		}()
+		})
 	}
 	wg.Wait()
 
@@ -375,12 +371,61 @@ func TestStatStore_MultipleHalvings(t *testing.T) {
 	assert.Equal(t, 1, v.Ftr)
 
 	// Keep incrementing until next halving
-	for i := 0; i < 256; i++ {
+	for range 256 {
 		s.IncStats(&InputStats{Views: []string{"1"}})
 	}
 
 	v, _ = s.Get(1)
 	assert.Equal(t, 2, v.Ftr)
+}
+
+func TestStatStore_IncStats_NewHits(t *testing.T) {
+	s := newStatStore()
+	input := &InputStats{Hits: []string{"1", "2"}}
+	s.IncStats(input)
+
+	assert.Equal(t, 2, s.Len())
+	v1, _ := s.Get(1)
+	assert.Equal(t, 1, v1.Hits)
+	assert.Equal(t, 0, v1.Views)
+}
+
+func TestStatStore_IncStats_NewEngagements(t *testing.T) {
+	s := newStatStore()
+	input := &InputStats{Engagements: []string{"1"}}
+	s.IncStats(input)
+
+	v, _ := s.Get(1)
+	assert.Equal(t, 1, v.Engagements)
+	assert.Equal(t, 0, v.Hits)
+}
+
+func TestStatStore_IncStats_ExistingHitsAndEngagements(t *testing.T) {
+	s := newStatStore()
+	s.Set(1, &StatRecord{Views: 10, Hits: 5, Engagements: 3})
+
+	input := &InputStats{Hits: []string{"1"}, Engagements: []string{"1"}}
+	s.IncStats(input)
+
+	v, _ := s.Get(1)
+	assert.Equal(t, 6, v.Hits)
+	assert.Equal(t, 4, v.Engagements)
+	assert.Equal(t, 10, v.Views)
+}
+
+func TestStatStore_IncStats_TrendingHalving_IncludesHitsEngagements(t *testing.T) {
+	s := newStatStore()
+	s.Set(1, &StatRecord{Views: 512, Clicks: 100, Hits: 200, Engagements: 80, Ftr: 0})
+
+	input := &InputStats{Views: []string{"1"}}
+	s.IncStats(input)
+
+	v, _ := s.Get(1)
+	assert.Equal(t, 257, v.Views)
+	assert.Equal(t, 50, v.Clicks)
+	assert.Equal(t, 100, v.Hits)       // (200+1)>>1 = 100
+	assert.Equal(t, 40, v.Engagements) // (80+1)>>1 = 40
+	assert.Equal(t, 1, v.Ftr)
 }
 
 func BenchmarkStatStore_IncStats(b *testing.B) {
@@ -390,18 +435,18 @@ func BenchmarkStatStore_IncStats(b *testing.B) {
 		Clicks: []string{"1", "2"},
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.IncStats(input)
 	}
 }
 
 func BenchmarkStatStore_GetData(b *testing.B) {
 	s := newStatStore()
-	for i := 0; i < 1000; i++ {
+	for i := range 1000 {
 		s.Set(i, &StatRecord{Views: i, Clicks: i / 2})
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.GetData()
 	}
 }
@@ -409,7 +454,9 @@ func BenchmarkStatStore_GetData(b *testing.B) {
 func BenchmarkStatStore_IncStats_WithEviction(b *testing.B) {
 	s := NewStatStore(1000, 10)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		s.IncStats(&InputStats{Views: []string{fmt.Sprintf("%d", i)}})
+		i++
 	}
 }

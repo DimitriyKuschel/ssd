@@ -2,18 +2,21 @@ package internal
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
+
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"ssd/internal/controllers"
 	"ssd/internal/providers"
 	"ssd/internal/statistic/interfaces"
 	"ssd/internal/structures"
-	"strconv"
-	"syscall"
-	"time"
 )
 
 type App struct {
@@ -21,21 +24,15 @@ type App struct {
 	logger    providers.Logger
 }
 
-func NewApp(apiController *controllers.ApiController, healthController *controllers.HealthController, scheduler interfaces.SchedulerInterface, conf *structures.Config, logger providers.Logger, router providers.RouterProviderInterface, metrics providers.MetricsProviderInterface) (*App, error) {
-	// Inner mux: API routes
-	apiMux := http.NewServeMux()
-	for _, route := range router.GetRoutes() {
-		apiMux.Handle(route.Url, route.Handler)
-	}
-
+func NewApp(healthController *controllers.HealthController, scheduler interfaces.SchedulerInterface, conf *structures.Config, logger providers.Logger, apiMux *http.ServeMux, metrics providers.MetricsProviderInterface) (*App, error) {
 	// Wrap API routes with metrics middleware
 	instrumentedAPI := providers.MetricsMiddleware(metrics, apiMux)
 
 	// Outer mux: infrastructure + instrumented API
 	mux := http.NewServeMux()
-	mux.HandleFunc("/health", healthController.Health)
+	mux.HandleFunc("GET /health", healthController.Health)
 	if conf.Metrics.Enabled {
-		mux.Handle("/metrics", promhttp.Handler())
+		mux.Handle("GET /metrics", promhttp.Handler())
 	}
 	mux.Handle("/", instrumentedAPI)
 
@@ -61,7 +58,7 @@ func NewApp(apiController *controllers.ApiController, healthController *controll
 	serverErr := make(chan error, 1)
 	go func() {
 		logger.Infof(providers.TypeApp, "Listening HTTP clients on %s:%d", conf.WebServer.Host, conf.WebServer.Port)
-		if err := app.WebServer.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := app.WebServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			serverErr <- err
 		}
 	}()
