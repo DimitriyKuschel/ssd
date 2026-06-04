@@ -34,8 +34,8 @@ func InitApp(cfg *structures.CliFlags) (*internal.App, error) {
 	}
 	fileManager := statistic.NewFileManager(compressorInterface, statisticServiceInterface, logger)
 	metricsProviderInterface := providers.NewMetricsProvider(config, statisticServiceInterface)
-	schedulerInterface := statistic.NewScheduler(config, logger, statisticServiceInterface, fileManager, metricsProviderInterface)
 	cacheProviderInterface := providers.NewInstrumentedCacheProvider(config, logger, metricsProviderInterface)
+	schedulerInterface := statistic.NewScheduler(config, logger, statisticServiceInterface, fileManager, metricsProviderInterface, cacheProviderInterface)
 	apiController := controllers.NewApiController(logger, statisticServiceInterface, cacheProviderInterface)
 	serveMux := internal.InitRoutes(apiController)
 	app, err := internal.NewApp(healthController, schedulerInterface, config, logger, serveMux, metricsProviderInterface)

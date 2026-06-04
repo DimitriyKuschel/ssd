@@ -175,6 +175,12 @@ func (m *MockCache) Set(key string, value []byte) {
 	m.Data[key] = value
 }
 
+func (m *MockCache) Clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Data = make(map[string][]byte)
+}
+
 // MockMetrics implements providers.MetricsProviderInterface as no-ops.
 type MockMetrics struct {
 	mu                       sync.Mutex

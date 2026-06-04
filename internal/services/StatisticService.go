@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"slices"
 	"ssd/internal/models"
 	"ssd/internal/structures"
@@ -210,6 +211,9 @@ func (ss *StatisticService) WriteBinarySnapshot(w io.Writer) error {
 		return err
 	}
 	for name, ch := range ss.channels {
+		if len(name) > math.MaxUint16 {
+			return fmt.Errorf("channel name too long to serialize: %d bytes (max %d)", len(name), math.MaxUint16)
+		}
 		if err := binary.Write(w, binByteOrder, uint16(len(name))); err != nil {
 			return err
 		}

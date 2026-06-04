@@ -69,6 +69,10 @@ func (ac *ApiController) ReceiveStats(w http.ResponseWriter, r *http.Request) {
 	if payload.Channel == "" {
 		payload.Channel = services.DefaultChannel
 	}
+	if !isValidChannel(payload.Channel) || !isValidFingerprint(payload.Fingerprint) {
+		http.Error(w, "Bad Request", http.StatusBadRequest)
+		return
+	}
 	ac.service.AddStats(&payload)
 	w.WriteHeader(http.StatusCreated)
 }

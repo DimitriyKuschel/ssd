@@ -27,6 +27,7 @@ type routeTestCache struct{}
 
 func (m *routeTestCache) Get(_ string) ([]byte, bool) { return nil, false }
 func (m *routeTestCache) Set(_ string, _ []byte)      {}
+func (m *routeTestCache) Clear()                      {}
 
 type routeTestMockService struct{}
 

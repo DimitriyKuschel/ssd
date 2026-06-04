@@ -37,9 +37,15 @@ func NewApp(healthController *controllers.HealthController, scheduler interfaces
 	mux.Handle("/", instrumentedAPI)
 
 	logger.Infof(providers.TypeApp, "Starting %s", conf.AppName)
-	err := scheduler.Restore()
-	if err != nil {
-		logger.Errorf(providers.TypeApp, "Restore error: %s", err)
+	// A restore failure means the on-disk data is unreadable/incompatible while the
+	// in-memory state is empty or only partially populated. Continuing would let the
+	// periodic persist overwrite the existing data file with that empty/partial state.
+	// Abort startup so an operator can intervene; the data file is left untouched.
+	// (LoadFromFile returns nil for a missing file, so a fresh start is unaffected.)
+	if err := scheduler.Restore(); err != nil {
+		logger.Errorf(providers.TypeApp, "Restore failed, refusing to start to avoid overwriting existing data: %s", err)
+		logger.Close()
+		return nil, fmt.Errorf("restore failed: %w", err)
 	}
 
 	app := &App{
@@ -79,11 +85,10 @@ func NewApp(healthController *controllers.HealthController, scheduler interfaces
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
 
-	if err = app.WebServer.Shutdown(ctx); err != nil {
+	if err := app.WebServer.Shutdown(ctx); err != nil {
 		return nil, err
 	}
-	err = scheduler.Persist()
-	if err != nil {
+	if err := scheduler.Persist(); err != nil {
 		return nil, err
 	}
 

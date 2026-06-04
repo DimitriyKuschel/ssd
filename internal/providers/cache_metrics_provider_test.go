@@ -30,6 +30,9 @@ func (c *cacheMetricsTestInner) Get(key string) ([]byte, bool) {
 func (c *cacheMetricsTestInner) Set(key string, value []byte) {
 	c.data[key] = value
 }
+func (c *cacheMetricsTestInner) Clear() {
+	c.data = make(map[string][]byte)
+}
 
 func TestMetricsCacheProvider_Hit(t *testing.T) {
 	inner := &cacheMetricsTestInner{data: map[string][]byte{"key1": []byte("val1")}}

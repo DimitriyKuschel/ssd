@@ -60,6 +60,7 @@ type mockCache struct {
 func newMockCache() *mockCache                     { return &mockCache{data: make(map[string][]byte)} }
 func (m *mockCache) Get(key string) ([]byte, bool) { v, ok := m.data[key]; return v, ok }
 func (m *mockCache) Set(key string, value []byte)  { m.data[key] = value }
+func (m *mockCache) Clear()                         { m.data = make(map[string][]byte) }
 
 // --- helpers ---
 
@@ -153,6 +154,65 @@ func TestReceiveStats_DefaultChannel(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rr.Code)
 	require.Len(t, svc.addCalls, 1)
 	assert.Equal(t, "default", svc.addCalls[0].Channel)
+}
+
+func TestReceiveStats_RejectsPathTraversalChannel(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"ch":"../../etc/passwd"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Empty(t, svc.addCalls)
+}
+
+func TestReceiveStats_RejectsInvalidChannelChars(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	for _, ch := range []string{"a/b", "with space", "emoji😀", strings.Repeat("x", maxChannelLen+1)} {
+		svc.addCalls = nil
+		payload := `{"v":["1"],"ch":"` + ch + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+		rr := httptest.NewRecorder()
+
+		ac.ReceiveStats(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code, "channel %q should be rejected", ch)
+		assert.Empty(t, svc.addCalls)
+	}
+}
+
+func TestReceiveStats_RejectsOversizedFingerprint(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"f":"` + strings.Repeat("a", maxFingerprintLen+1) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Empty(t, svc.addCalls)
+}
+
+func TestReceiveStats_AcceptsValidChannelChars(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"ch":"news_feed-2.0"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	require.Len(t, svc.addCalls, 1)
 }
 
 // --- GetStats tests ---

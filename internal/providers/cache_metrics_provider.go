@@ -23,6 +23,10 @@ func (c *MetricsCacheProvider) Set(key string, value []byte) {
 	c.inner.Set(key, value)
 }
 
+func (c *MetricsCacheProvider) Clear() {
+	c.inner.Clear()
+}
+
 // NewInstrumentedCacheProvider creates a cache provider wrapped with metrics instrumentation.
 // When cache is disabled, returns the plain noopCache without metrics wrapping
 // to avoid counting phantom cache misses.
