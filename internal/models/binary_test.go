@@ -2,6 +2,7 @@ package models
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,6 +131,15 @@ func TestWriteReadString_Empty(t *testing.T) {
 	got, err := readString(bytes.NewReader(buf.Bytes()))
 	require.NoError(t, err)
 	assert.Equal(t, "", got)
+}
+
+func TestWriteString_TooLong(t *testing.T) {
+	var buf bytes.Buffer
+	// A string longer than uint16 max cannot be length-prefixed without
+	// truncation; writeString must error instead of corrupting the stream.
+	err := writeString(&buf, strings.Repeat("a", 1<<16))
+	require.Error(t, err)
+	assert.Equal(t, 0, buf.Len(), "nothing should be written on overflow")
 }
 
 func TestWriteReadBitmap(t *testing.T) {

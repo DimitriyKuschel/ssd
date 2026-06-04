@@ -21,6 +21,30 @@ func newTestColdStorage(t *testing.T, coldTTL time.Duration) *ColdStorage {
 	return NewColdStorage(dir, coldTTL, &testutil.MockCompressor{}, &testutil.MockLogger{})
 }
 
+func TestColdStorage_RefusesPathTraversalChannel(t *testing.T) {
+	cs := newTestColdStorage(t, 0)
+
+	// A channel name that escapes the storage dir must not produce a write.
+	cs.Evict("../escape", "fp1", map[int]*models.StatRecord{1: {Views: 1}})
+	err := cs.Flush()
+
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "outside storage dir")
+
+	// Nothing should have been written outside the storage directory.
+	_, statErr := os.Stat(filepath.Join(filepath.Dir(cs.dir), "escape.cold.zst"))
+	assert.True(t, errors.Is(statErr, fs.ErrNotExist))
+}
+
+func TestColdStorage_IsWithinDir(t *testing.T) {
+	cs := newTestColdStorage(t, 0)
+
+	assert.True(t, cs.isWithinDir(cs.coldFilePath("default")))
+	assert.True(t, cs.isWithinDir(cs.coldFilePath("news_feed-2.0")))
+	assert.False(t, cs.isWithinDir(cs.coldFilePath("../escape")))
+	assert.False(t, cs.isWithinDir(cs.coldFilePath("../../etc/passwd")))
+}
+
 func TestColdStorage_Has_Empty(t *testing.T) {
 	cs := newTestColdStorage(t, 0)
 	assert.False(t, cs.Has("default", "fp1"))

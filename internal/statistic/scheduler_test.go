@@ -53,7 +53,7 @@ func TestScheduler_Restore_Success(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{})
 	require.NoError(t, s.Restore())
 
 	data := svc.GetStatistic("default")
@@ -67,7 +67,7 @@ func TestScheduler_Restore_FileNotExist(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig("/nonexistent/file.dat")
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{})
 	err := s.Restore()
 	assert.NoError(t, err)
 }
@@ -83,7 +83,7 @@ func TestScheduler_Restore_CorruptedFile(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{})
 	err := s.Restore()
 	assert.Error(t, err)
 }
@@ -101,7 +101,7 @@ func TestScheduler_Persist_Success(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{})
 	require.NoError(t, s.Persist())
 
 	_, err := os.Stat(path)
@@ -119,7 +119,7 @@ func TestScheduler_Persist_WriteError(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig("/tmp/test.dat")
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{})
 	err := s.Persist()
 	assert.Error(t, err)
 }
@@ -131,7 +131,7 @@ func TestScheduler_StopNilCron(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig("/tmp/test.dat")
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{})
 	// Should not panic with nil cron
 	s.Stop()
 }
@@ -146,7 +146,7 @@ func TestScheduler_InitAndStop(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 	conf := testConfig(path)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{})
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{})
 	s.Init()
 	// Give the cron a moment to start
 	time.Sleep(50 * time.Millisecond)
@@ -181,7 +181,7 @@ func TestScheduler_ColdStorage_CreatedWhenTTLSet(t *testing.T) {
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}).(*Scheduler)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{}).(*Scheduler)
 	assert.NotNil(t, s.cold)
 }
 
@@ -195,7 +195,7 @@ func TestScheduler_ColdStorage_NotCreatedWhenNoTTL(t *testing.T) {
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}).(*Scheduler)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{}).(*Scheduler)
 	assert.Nil(t, s.cold)
 }
 
@@ -209,7 +209,7 @@ func TestScheduler_ColdStorage_EvictFlushAndRestore(t *testing.T) {
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}).(*Scheduler)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{}).(*Scheduler)
 	require.NotNil(t, s.cold)
 
 	// Evict a fingerprint through cold storage directly
@@ -226,7 +226,7 @@ func TestScheduler_ColdStorage_EvictFlushAndRestore(t *testing.T) {
 	// Create new scheduler with same dir, restore cold index
 	svc2 := services.NewStatisticService(conf)
 	fm2 := NewFileManager(comp, svc2, logger)
-	s2 := NewScheduler(conf, logger, svc2, fm2, &testutil.MockMetrics{}).(*Scheduler)
+	s2 := NewScheduler(conf, logger, svc2, fm2, &testutil.MockMetrics{}, &testutil.MockCache{}).(*Scheduler)
 	require.NotNil(t, s2.cold)
 	require.NoError(t, s2.Restore())
 
@@ -251,7 +251,7 @@ func TestScheduler_Persist_FlushesColdstorage(t *testing.T) {
 	logger := &testutil.MockLogger{}
 	fm := NewFileManager(comp, svc, logger)
 
-	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}).(*Scheduler)
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{}).(*Scheduler)
 	require.NotNil(t, s.cold)
 
 	// Evict directly into cold storage
@@ -276,7 +276,7 @@ func TestScheduler_Restore_RestoresColdIndex(t *testing.T) {
 	fm := NewFileManager(comp, svc, logger)
 
 	// Create first scheduler, evict data, persist (flushes cold)
-	s1 := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}).(*Scheduler)
+	s1 := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, &testutil.MockCache{}).(*Scheduler)
 	require.NotNil(t, s1.cold)
 	s1.cold.Evict("default", "fp_cold", map[int]*models.StatRecord{1: {Views: 50}})
 	require.NoError(t, s1.Persist())
@@ -284,9 +284,26 @@ func TestScheduler_Restore_RestoresColdIndex(t *testing.T) {
 	// Create second scheduler from scratch — Restore should pick up cold index
 	svc2 := services.NewStatisticService(conf)
 	fm2 := NewFileManager(comp, svc2, logger)
-	s2 := NewScheduler(conf, logger, svc2, fm2, &testutil.MockMetrics{}).(*Scheduler)
+	s2 := NewScheduler(conf, logger, svc2, fm2, &testutil.MockMetrics{}, &testutil.MockCache{}).(*Scheduler)
 	require.NotNil(t, s2.cold)
 	require.NoError(t, s2.Restore())
 
 	assert.True(t, s2.cold.Has("default", "fp_cold"))
+}
+
+func TestScheduler_Aggregate_ClearsCache(t *testing.T) {
+	svc := services.NewStatisticService(testConfig(""))
+	comp := &testutil.MockCompressor{}
+	logger := &testutil.MockLogger{}
+	fm := NewFileManager(comp, svc, logger)
+	conf := testConfig("/tmp/test.dat")
+
+	cache := testutil.NewMockCache()
+	cache.Set("list:default", []byte("stale"))
+
+	s := NewScheduler(conf, logger, svc, fm, &testutil.MockMetrics{}, cache).(*Scheduler)
+	s.doAggregate()
+
+	_, ok := cache.Get("list:default")
+	assert.False(t, ok, "aggregation should clear cached responses")
 }

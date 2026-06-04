@@ -19,6 +19,25 @@ func (w *statusWriter) Unwrap() http.ResponseWriter {
 	return w.ResponseWriter
 }
 
+// knownEndpoints is the allowlist of routed API paths. Anything else (random
+// scans, 404s) is bucketed into a single label to avoid Prometheus cardinality
+// blow-up, since the outer mux forwards every unmatched path through this handler.
+var knownEndpoints = map[string]struct{}{
+	"/":             {},
+	"/list":         {},
+	"/fingerprints": {},
+	"/fingerprint":  {},
+	"/channels":     {},
+	"/hit":          {},
+}
+
+func normalizeEndpoint(path string) string {
+	if _, ok := knownEndpoints[path]; ok {
+		return path
+	}
+	return "other"
+}
+
 func MetricsMiddleware(metrics MetricsProviderInterface, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
@@ -27,7 +46,7 @@ func MetricsMiddleware(metrics MetricsProviderInterface, next http.Handler) http
 		next.ServeHTTP(sw, r)
 
 		duration := time.Since(start)
-		endpoint := r.URL.Path
+		endpoint := normalizeEndpoint(r.URL.Path)
 		metrics.IncRequestsTotal(endpoint, sw.status)
 		metrics.ObserveRequestDuration(endpoint, duration)
 	})

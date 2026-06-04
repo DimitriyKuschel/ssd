@@ -189,13 +189,58 @@ func (s *StatStore) GetData() map[int]*StatRecord {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Allocate all records in one backing slice instead of one heap allocation
+	// per record (&copy), so a snapshot of N records costs a handful of allocs
+	// rather than N. Values point into backing, which is freshly allocated here
+	// and never shared, so callers can read freely.
+	backing := make([]StatRecord, len(s.data))
 	result := make(map[int]*StatRecord, len(s.data))
+	idx := 0
 	for id, rec := range s.data {
-		copy := rec
-		copy.ComputeBounceRate()
-		result[int(id)] = &copy
+		backing[idx] = rec
+		backing[idx].ComputeBounceRate()
+		result[int(id)] = &backing[idx]
+		idx++
 	}
 	return result
+}
+
+// GetDataPage returns a single page of records sorted by ascending ID, plus the
+// total record count. Only the page's records are copied (into one backing
+// slice), so a small page over a large channel does not pay to copy every record
+// the way GetData() + controller-side slicing would. limit<=0 means "from offset
+// to the end".
+func (s *StatStore) GetDataPage(limit, offset int) (map[int]*StatRecord, int) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	total := len(s.data)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return make(map[int]*StatRecord), total
+	}
+
+	keys := make([]uint32, 0, total)
+	for id := range s.data {
+		keys = append(keys, id)
+	}
+	slices.Sort(keys)
+
+	keys = keys[offset:]
+	if limit > 0 && limit < len(keys) {
+		keys = keys[:limit]
+	}
+
+	backing := make([]StatRecord, len(keys))
+	result := make(map[int]*StatRecord, len(keys))
+	for i, id := range keys {
+		backing[i] = s.data[id]
+		backing[i].ComputeBounceRate()
+		result[int(id)] = &backing[i]
+	}
+	return result, total
 }
 
 // WriteBinaryTo writes the stat store data in binary format.

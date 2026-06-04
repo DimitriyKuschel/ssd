@@ -99,6 +99,16 @@ func (m *MockStatisticService) GetPersonalStatistic(channel string) map[string]*
 	return nil
 }
 
+func (m *MockStatisticService) GetStatisticPage(channel string, _, _ int) (map[int]*models.StatRecord, int) {
+	d := m.GetStatistic(channel)
+	return d, len(d)
+}
+
+func (m *MockStatisticService) GetPersonalStatisticPage(channel string, _, _ int) (map[string]*models.Statistic, int) {
+	d := m.GetPersonalStatistic(channel)
+	return d, len(d)
+}
+
 func (m *MockStatisticService) GetByFingerprint(channel, fp string) map[int]*models.StatRecord {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -173,6 +183,12 @@ func (m *MockCache) Set(key string, value []byte) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.Data[key] = value
+}
+
+func (m *MockCache) Clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.Data = make(map[string][]byte)
 }
 
 // MockMetrics implements providers.MetricsProviderInterface as no-ops.

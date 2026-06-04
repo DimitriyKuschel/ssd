@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"io"
 	"math"
+	"slices"
 	"sync"
 	"time"
 
@@ -154,6 +155,40 @@ func (ps *PersonalStatStore) GetData() map[string]*Statistic {
 		result[fp] = &Statistic{Data: rec.GetData()}
 	}
 	return result
+}
+
+// GetDataPage returns a single page of fingerprints sorted by ascending ID, plus
+// the total fingerprint count. Only the page's fingerprint records are
+// reconstructed, avoiding a full rebuild of every fingerprint's data the way
+// GetData() does. limit<=0 means "from offset to the end".
+func (ps *PersonalStatStore) GetDataPage(limit, offset int) (map[string]*Statistic, int) {
+	ps.mu.RLock()
+	defer ps.mu.RUnlock()
+
+	total := len(ps.fingerprints)
+	if offset < 0 {
+		offset = 0
+	}
+	if offset >= total {
+		return make(map[string]*Statistic), total
+	}
+
+	keys := make([]string, 0, total)
+	for fp := range ps.fingerprints {
+		keys = append(keys, fp)
+	}
+	slices.Sort(keys)
+
+	keys = keys[offset:]
+	if limit > 0 && limit < len(keys) {
+		keys = keys[:limit]
+	}
+
+	result := make(map[string]*Statistic, len(keys))
+	for _, fp := range keys {
+		result[fp] = &Statistic{Data: ps.fingerprints[fp].GetData()}
+	}
+	return result, total
 }
 
 // PutData loads data from V3 format (map[string]*Statistic) into PersonalStatStore.

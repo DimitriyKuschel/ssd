@@ -16,6 +16,7 @@ type Scheduler struct {
 	service     services.StatisticServiceInterface
 	fileManager *FileManager
 	metrics     providers.MetricsProviderInterface
+	cache       providers.CacheProviderInterface
 	cold        *ColdStorage
 	opsMu       sync.Mutex
 	stopCh      chan struct{}
@@ -73,6 +74,11 @@ func (s *Scheduler) doAggregate() {
 	s.logger.Infof(providers.TypeApp, "Aggregate statistic...")
 	s.service.AggregateStats()
 	s.service.EvictExpiredFingerprints()
+	// Aggregation produces a new set of trending values, so any GET responses
+	// cached against the previous aggregation are now stale. Drop them.
+	if s.cache != nil {
+		s.cache.Clear()
+	}
 	for _, ch := range s.service.GetChannels() {
 		s.metrics.SetRecordsTotal(ch, s.service.GetRecordCount(ch))
 	}
@@ -127,13 +133,14 @@ func (s *Scheduler) Persist() error {
 	return nil
 }
 
-func NewScheduler(config *structures.Config, logger providers.Logger, service services.StatisticServiceInterface, fileManager *FileManager, metrics providers.MetricsProviderInterface) interfaces.SchedulerInterface {
+func NewScheduler(config *structures.Config, logger providers.Logger, service services.StatisticServiceInterface, fileManager *FileManager, metrics providers.MetricsProviderInterface, cache providers.CacheProviderInterface) interfaces.SchedulerInterface {
 	s := &Scheduler{
 		config:      config,
 		logger:      logger,
 		service:     service,
 		fileManager: fileManager,
 		metrics:     metrics,
+		cache:       cache,
 	}
 
 	// Initialize cold storage if fingerprint TTL is configured

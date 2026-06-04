@@ -62,6 +62,25 @@ func TestMetricsMiddleware_DefaultStatus200(t *testing.T) {
 	assert.Equal(t, http.StatusOK, metrics.requestStatus)
 }
 
+func TestMetricsMiddleware_BucketsUnknownPaths(t *testing.T) {
+	metrics := &mockMetrics{}
+	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {})
+	mw := MetricsMiddleware(metrics, handler)
+
+	req := httptest.NewRequest(http.MethodGet, "/random/scan/path/12345", nil)
+	mw.ServeHTTP(httptest.NewRecorder(), req)
+
+	assert.Equal(t, "other", metrics.requestEndpoint)
+}
+
+func TestNormalizeEndpoint(t *testing.T) {
+	assert.Equal(t, "/list", normalizeEndpoint("/list"))
+	assert.Equal(t, "/", normalizeEndpoint("/"))
+	assert.Equal(t, "/hit", normalizeEndpoint("/hit"))
+	assert.Equal(t, "other", normalizeEndpoint("/unknown"))
+	assert.Equal(t, "other", normalizeEndpoint("/list/../etc"))
+}
+
 func TestStatusWriter_WriteHeader(t *testing.T) {
 	rr := httptest.NewRecorder()
 	sw := &statusWriter{ResponseWriter: rr, status: http.StatusOK}

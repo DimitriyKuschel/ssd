@@ -19,7 +19,13 @@ func (m *metricsTestService) AddStats(_ *models.InputStats)                     
 func (m *metricsTestService) AggregateStats()                                            {}
 func (m *metricsTestService) GetStatistic(_ string) map[int]*models.StatRecord           { return nil }
 func (m *metricsTestService) GetPersonalStatistic(_ string) map[string]*models.Statistic { return nil }
-func (m *metricsTestService) GetByFingerprint(_, _ string) map[int]*models.StatRecord    { return nil }
+func (m *metricsTestService) GetStatisticPage(_ string, _, _ int) (map[int]*models.StatRecord, int) {
+	return nil, 0
+}
+func (m *metricsTestService) GetPersonalStatisticPage(_ string, _, _ int) (map[string]*models.Statistic, int) {
+	return nil, 0
+}
+func (m *metricsTestService) GetByFingerprint(_, _ string) map[int]*models.StatRecord { return nil }
 func (m *metricsTestService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {
 }
 func (m *metricsTestService) PutChannelDataV4(_ string, _ map[int]*models.StatRecord, _ map[string]*models.FingerprintPersistence) {

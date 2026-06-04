@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"maps"
+	"math"
 	"slices"
 	"ssd/internal/models"
 	"ssd/internal/structures"
@@ -19,7 +20,9 @@ type StatisticServiceInterface interface {
 	AddStats(data *models.InputStats)
 	AggregateStats()
 	GetStatistic(channel string) map[int]*models.StatRecord
+	GetStatisticPage(channel string, limit, offset int) (map[int]*models.StatRecord, int)
 	GetPersonalStatistic(channel string) map[string]*models.Statistic
+	GetPersonalStatisticPage(channel string, limit, offset int) (map[string]*models.Statistic, int)
 	GetByFingerprint(channel, fp string) map[int]*models.StatRecord
 	PutChannelData(channel string, trend map[int]*models.StatRecord, personal map[string]*models.Statistic)
 	PutChannelDataV4(channel string, trend map[int]*models.StatRecord, personal map[string]*models.FingerprintPersistence)
@@ -127,6 +130,16 @@ func (ss *StatisticService) GetStatistic(channel string) map[int]*models.StatRec
 	return nil
 }
 
+func (ss *StatisticService) GetStatisticPage(channel string, limit, offset int) (map[int]*models.StatRecord, int) {
+	ss.chMu.RLock()
+	ch, ok := ss.channels[channel]
+	ss.chMu.RUnlock()
+	if ok {
+		return ch.stats.GetDataPage(limit, offset)
+	}
+	return nil, 0
+}
+
 func (ss *StatisticService) GetPersonalStatistic(channel string) map[string]*models.Statistic {
 	ss.chMu.RLock()
 	ch, ok := ss.channels[channel]
@@ -135,6 +148,16 @@ func (ss *StatisticService) GetPersonalStatistic(channel string) map[string]*mod
 		return ch.personalStats.GetData()
 	}
 	return nil
+}
+
+func (ss *StatisticService) GetPersonalStatisticPage(channel string, limit, offset int) (map[string]*models.Statistic, int) {
+	ss.chMu.RLock()
+	ch, ok := ss.channels[channel]
+	ss.chMu.RUnlock()
+	if ok {
+		return ch.personalStats.GetDataPage(limit, offset)
+	}
+	return nil, 0
 }
 
 func (ss *StatisticService) GetByFingerprint(channel, fp string) map[int]*models.StatRecord {
@@ -210,6 +233,9 @@ func (ss *StatisticService) WriteBinarySnapshot(w io.Writer) error {
 		return err
 	}
 	for name, ch := range ss.channels {
+		if len(name) > math.MaxUint16 {
+			return fmt.Errorf("channel name too long to serialize: %d bytes (max %d)", len(name), math.MaxUint16)
+		}
 		if err := binary.Write(w, binByteOrder, uint16(len(name))); err != nil {
 			return err
 		}

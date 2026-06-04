@@ -8,7 +8,9 @@ import (
 	"ssd/internal/models"
 	"ssd/internal/providers"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +41,12 @@ func (m *mockService) GetStatistic(_ string) map[int]*models.StatRecord { return
 func (m *mockService) GetPersonalStatistic(_ string) map[string]*models.Statistic {
 	return m.personalData
 }
+func (m *mockService) GetStatisticPage(_ string, limit, offset int) (map[int]*models.StatRecord, int) {
+	return paginateIntMap(m.statisticData, limit, offset)
+}
+func (m *mockService) GetPersonalStatisticPage(_ string, limit, offset int) (map[string]*models.Statistic, int) {
+	return paginateStringMap(m.personalData, limit, offset)
+}
 func (m *mockService) GetByFingerprint(_, _ string) map[int]*models.StatRecord { return m.fpData }
 func (m *mockService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {
 }
@@ -54,12 +62,27 @@ func (m *mockService) WriteBinarySnapshot(_ io.Writer) error        { return nil
 func (m *mockService) ReadBinarySnapshot(_ io.Reader) error         { return nil }
 
 type mockCache struct {
+	mu   sync.Mutex
 	data map[string][]byte
 }
 
-func newMockCache() *mockCache                     { return &mockCache{data: make(map[string][]byte)} }
-func (m *mockCache) Get(key string) ([]byte, bool) { v, ok := m.data[key]; return v, ok }
-func (m *mockCache) Set(key string, value []byte)  { m.data[key] = value }
+func newMockCache() *mockCache { return &mockCache{data: make(map[string][]byte)} }
+func (m *mockCache) Get(key string) ([]byte, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	v, ok := m.data[key]
+	return v, ok
+}
+func (m *mockCache) Set(key string, value []byte) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data[key] = value
+}
+func (m *mockCache) Clear() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.data = make(map[string][]byte)
+}
 
 // --- helpers ---
 
@@ -153,6 +176,122 @@ func TestReceiveStats_DefaultChannel(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, rr.Code)
 	require.Len(t, svc.addCalls, 1)
 	assert.Equal(t, "default", svc.addCalls[0].Channel)
+}
+
+func TestReceiveStats_RejectsPathTraversalChannel(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"ch":"../../etc/passwd"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Empty(t, svc.addCalls)
+}
+
+func TestReceiveStats_RejectsInvalidChannelChars(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	for _, ch := range []string{"a/b", "with space", "emoji😀", strings.Repeat("x", maxChannelLen+1)} {
+		svc.addCalls = nil
+		payload := `{"v":["1"],"ch":"` + ch + `"}`
+		req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+		rr := httptest.NewRecorder()
+
+		ac.ReceiveStats(rr, req)
+
+		assert.Equal(t, http.StatusBadRequest, rr.Code, "channel %q should be rejected", ch)
+		assert.Empty(t, svc.addCalls)
+	}
+}
+
+func TestReceiveStats_RejectsOversizedFingerprint(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"f":"` + strings.Repeat("a", maxFingerprintLen+1) + `"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusBadRequest, rr.Code)
+	assert.Empty(t, svc.addCalls)
+}
+
+func TestReceiveStats_AcceptsValidChannelChars(t *testing.T) {
+	svc := &mockService{}
+	ac := newTestController(svc, newMockCache())
+
+	payload := `{"v":["1"],"ch":"news_feed-2.0"}`
+	req := httptest.NewRequest(http.MethodPost, "/", strings.NewReader(payload))
+	rr := httptest.NewRecorder()
+
+	ac.ReceiveStats(rr, req)
+
+	assert.Equal(t, http.StatusCreated, rr.Code)
+	require.Len(t, svc.addCalls, 1)
+}
+
+// blockingService embeds mockService but blocks GetStatistic until released,
+// so the test can hold the singleflight leader inside compute while waiters pile up.
+type blockingService struct {
+	*mockService
+	mu          sync.Mutex
+	calls       int
+	entered     chan struct{}
+	enteredOnce sync.Once
+	release     chan struct{}
+}
+
+func (b *blockingService) GetStatistic(ch string) map[int]*models.StatRecord {
+	b.mu.Lock()
+	b.calls++
+	b.mu.Unlock()
+	b.enteredOnce.Do(func() { close(b.entered) })
+	<-b.release
+	return b.mockService.GetStatistic(ch)
+}
+
+func TestSingleflight_DedupesConcurrentMisses(t *testing.T) {
+	svc := &blockingService{
+		mockService: &mockService{statisticData: map[int]*models.StatRecord{1: {Views: 5}}},
+		entered:     make(chan struct{}),
+		release:     make(chan struct{}),
+	}
+	ac := NewApiController(&mockLogger{}, svc, newMockCache())
+
+	const n = 20
+	var wg sync.WaitGroup
+	fire := func() {
+		defer wg.Done()
+		req := httptest.NewRequest(http.MethodGet, "/list", nil)
+		rr := httptest.NewRecorder()
+		ac.GetStats(rr, req)
+		assert.Equal(t, http.StatusOK, rr.Code)
+	}
+
+	// Leader enters compute and blocks.
+	wg.Add(1)
+	go fire()
+	<-svc.entered
+
+	// Remaining requests arrive while the leader holds the flight — they become waiters.
+	for range n - 1 {
+		wg.Add(1)
+		go fire()
+	}
+	time.Sleep(100 * time.Millisecond) // let waiters reach singleflight.Do
+	close(svc.release)
+	wg.Wait()
+
+	svc.mu.Lock()
+	defer svc.mu.Unlock()
+	assert.Equal(t, 1, svc.calls, "concurrent identical misses should compute once")
 }
 
 // --- GetStats tests ---

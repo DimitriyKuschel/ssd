@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"math"
 	"time"
 
 	"github.com/RoaringBitmap/roaring/v2"
@@ -11,8 +12,13 @@ import (
 
 var byteOrder = binary.LittleEndian
 
-// writeString writes a uint16 length-prefixed UTF-8 string.
+// writeString writes a uint16 length-prefixed UTF-8 string. It returns an error
+// (rather than silently truncating the length prefix) if the string is longer
+// than a uint16 can encode, which would otherwise corrupt the snapshot on read.
 func writeString(w io.Writer, s string) error {
+	if len(s) > math.MaxUint16 {
+		return fmt.Errorf("string too long to serialize: %d bytes (max %d)", len(s), math.MaxUint16)
+	}
 	if err := binary.Write(w, byteOrder, uint16(len(s))); err != nil {
 		return err
 	}

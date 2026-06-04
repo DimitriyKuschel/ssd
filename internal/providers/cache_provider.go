@@ -9,6 +9,7 @@ import (
 type CacheProviderInterface interface {
 	Get(key string) ([]byte, bool)
 	Set(key string, value []byte)
+	Clear()
 }
 
 type CacheProvider struct {
@@ -55,7 +56,14 @@ func (c *CacheProvider) Set(key string, value []byte) {
 	_ = c.cache.Set(unsafeStringToBytes(key), value, c.ttl)
 }
 
+// Clear evicts all cached entries. Called after each aggregation so that GET
+// responses cached against the previous aggregation are not served as stale.
+func (c *CacheProvider) Clear() {
+	c.cache.Clear()
+}
+
 type noopCache struct{}
 
 func (n *noopCache) Get(_ string) ([]byte, bool) { return nil, false }
 func (n *noopCache) Set(_ string, _ []byte)      {}
+func (n *noopCache) Clear()                       {}

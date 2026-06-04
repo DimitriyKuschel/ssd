@@ -2,6 +2,7 @@ package statistic
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -283,6 +284,14 @@ func (cs *ColdStorage) loadColdFileFromDisk(channel string) *ColdFile {
 
 // writeColdFile serializes and atomically writes a cold file to disk.
 func (cs *ColdStorage) writeColdFile(channel string, cf *ColdFile) error {
+	path := cs.coldFilePath(channel)
+	// Defense-in-depth: channel names are validated at the API boundary, but make
+	// sure a name that slipped through (e.g. via a restored data file) can never
+	// cause a write outside the cold storage directory.
+	if !cs.isWithinDir(path) {
+		return fmt.Errorf("cold storage: refusing to write channel %q outside storage dir", channel)
+	}
+
 	jsonData, err := json.Marshal(cf)
 	if err != nil {
 		return err
@@ -293,7 +302,6 @@ func (cs *ColdStorage) writeColdFile(channel string, cf *ColdFile) error {
 		return err
 	}
 
-	path := cs.coldFilePath(channel)
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
@@ -309,6 +317,16 @@ func (cs *ColdStorage) writeColdFile(channel string, cf *ColdFile) error {
 // coldFilePath returns the file path for a channel's cold storage file.
 func (cs *ColdStorage) coldFilePath(channel string) string {
 	return filepath.Join(cs.dir, channel+".cold.zst")
+}
+
+// isWithinDir reports whether path resolves to a location inside cs.dir,
+// guarding against path-traversal channel names.
+func (cs *ColdStorage) isWithinDir(path string) bool {
+	rel, err := filepath.Rel(cs.dir, path)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
 }
 
 // extractChannelName extracts the channel name from a cold file path.
