@@ -31,7 +31,7 @@ release:
 archives:
   -
     id: "ssd"
-    builds: ['ssd']
+    ids: ['ssd']
     formats:
       - tar.gz
     name_template: "{{.ProjectName}}-{{.Version}}-{{.Os}}-{{.Arch}}"
@@ -39,7 +39,7 @@ archives:
 nfpms:
   -
     id: "ssd"
-    builds: ['ssd']
+    ids: ['ssd']
     formats:
       - deb
       - rpm
@@ -80,7 +80,7 @@ nfpms:
       postinstall: "scripts/postinstall.sh"
 
 snapshot:
-  name_template: "{{.Version}}-master"
+  version_template: "{{.Version}}-master"
 changelog:
   sort: asc
   filters:

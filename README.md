@@ -27,17 +27,18 @@ A high-performance Go daemon for collecting and aggregating real-time content st
 - **Fast JSON** — `goccy/go-json` for 2-3x faster serialization vs stdlib `encoding/json`
 - **Hit & Engagement Tracking** — track hits and engagements per content item; bounce rate (`br`) computed on the fly in GET responses as `(hits - engagements) / hits * 100`
 - **Binary Persistence** — V6 binary format with Roaring Bitmap serialization and hits/engagements fields; automatic migration from older formats (V1-V5)
-- **Response Cache** — optional freecache-based caching with zero-alloc key lookup (`unsafe.Slice`), TTL = aggregation interval + 1s
+- **Response Cache** — optional freecache-based caching with zero-alloc key lookup (`unsafe.Slice`), TTL = aggregation interval + 1s; invalidated on each aggregation so reads never serve stale data, with `singleflight` collapsing the post-invalidation recompute stampede
+- **Input Validation** — channel names restricted to a safe charset (`[A-Za-z0-9._-]`, length-bounded), fingerprints length-bounded; rejects path-traversal and over-long identifiers at the API boundary
 - **Zero External Dependencies** — standalone binary, no databases or message queues
 - **Trending Algorithm** — automatic time-decay: views > 512 triggers halving of all counters (views, clicks, hits, engagements) with factor counter for trending CTR
 - **Fingerprint Tracking** — per-user statistics grouped by browser fingerprint
 - **Channel Isolation** — separate stat namespaces via `ch` parameter (configurable max channels), double-check RLock/Lock pattern
-- **Crash-Safe Persistence** — atomic file writes (tmp + fsync + rename) with Zstd compression
+- **Crash-Safe Persistence** — atomic file writes (tmp + fsync + rename) with Zstd compression; refuses to start on an unreadable/incompatible data file instead of overwriting it with empty state
 - **Graceful Shutdown** — SIGINT/SIGTERM handling with data persistence and cold storage flush before exit
 - **Prometheus Metrics** — optional `/metrics` endpoint with request counters, latency histograms, cache hit/miss, persistence duration, buffer/channel gauges
 - **Health Check** — `GET /health` for Kubernetes readiness/liveness probes (uptime, buffer size, channel count)
 - **HTTP Hardened** — server-side ReadTimeout, WriteTimeout, IdleTimeout
-- **Fully Tested** — 317 unit tests with race detector
+- **Fully Tested** — 331 unit tests with race detector
 - **Docker Ready** — multi-stage Dockerfile included
 
 ## Quick Start
@@ -509,6 +510,43 @@ Phase 3 — Read-heavy load (10% POST, 90% GET):
 | GET /channels P99 | 38.8ms | 45.8ms | 41.3ms | 40.0ms |
 
 Cache OFF shows ~5-15% P99 increase on GET endpoints — expected due to larger JSON responses (3 extra fields per record: `h`, `e`, `br`). With cache ON, the regression disappears and v1.4.0 is **+14-16% faster** on total RPS thanks to `BounceRate` being computed during `GetData()` copy via json struct tags (zero-alloc serialization path, no custom `MarshalJSON` overhead).
+
+### What's new in v1.4.1 vs v1.4.0
+
+A security/correctness hardening pass plus a read-path performance overhaul. The HTTP API and the V6 binary format are unchanged — no migration required.
+
+**Security & correctness:**
+- **Path-traversal protection** — channel names are validated at the API boundary against a safe charset (`[A-Za-z0-9._-]`, max 64 chars, `.`/`..` rejected) before they can become cold-storage file names (`{channel}.cold.zst`); cold storage additionally refuses to write outside its directory as defense-in-depth
+- **Crash-safe restore** — a corrupt/incompatible data file now aborts startup instead of being logged-and-ignored, which previously let the periodic persist overwrite good data with empty state (a missing file still starts fresh, as before)
+- **Snapshot integrity** — channel/fingerprint lengths are bounded on input and the binary serializer errors out (rather than silently truncating the `uint16` length prefix) for over-long strings, so a snapshot can never be written in a corrupt, unreadable state
+- **No stale reads** — the response cache is now invalidated on every aggregation; a GET cached just before aggregation is no longer served for nearly a full interval
+- **Bounded metrics cardinality** — the Prometheus `endpoint` label is normalized to the known route set (`/`, `/list`, `/fingerprints`, `/fingerprint`, `/channels`, `/hit`); unmatched paths bucket into `other` instead of minting a new label per random URL
+
+**Read-path performance:**
+- **`singleflight` on cache miss** — concurrent identical GETs (the stampede right after the per-interval cache invalidation) collapse into a single compute + marshal; waiters share the bytes
+- **Zero-per-record allocation in `StatStore.GetData()`** — records are copied into one backing slice instead of one heap allocation each: **1006 → 7 allocs/op** for 1000 records, ~23% faster
+- **Page-aware getters** — paginated `GET /list` and `GET /fingerprints` (`GetStatisticPage`/`GetPersonalStatisticPage`) copy only the requested page instead of the whole channel; a 20-item page over a 5,000-record channel goes **430µs → 240µs (~44% faster), 435 KB → 22 KB, 23 → 6 allocs** end-to-end
+
+**Read-path A/B (same machine, 50 workers × 10s/phase; baseline = v1.4.1 with the three read optimizations reverted; `interval: 1s`):**
+
+Phase 2 — Mixed load (70% POST, 30% GET):
+
+| Metric | base OFF | v1.4.1 OFF | base ON | v1.4.1 ON |
+|---|---|---|---|---|
+| **Total RPS** | 5,856 | **18,831** (+222%) | 6,014 | **20,838** (+246%) |
+| GET /list P99 | 32.0ms | **7.3ms** | 29.2ms | **6.4ms** |
+
+Phase 3 — Read-heavy load (10% POST, 90% GET):
+
+| Metric | base OFF | v1.4.1 OFF | base ON | v1.4.1 ON |
+|---|---|---|---|---|
+| **Total RPS** | 2,127 | **7,858** (+269%) | 2,332 | **8,471** (+263%) |
+| GET /list P99 | 69.5ms | **10.3ms** | 63.0ms | **8.5ms** |
+| GET /fingerprints P99 | 176ms | **56ms** | 169ms | **54ms** |
+
+POST seeding throughput is unchanged (~140K RPS, ±4% run-to-run) — the optimizations only touch the read path. The large read gains come mainly from `singleflight` collapsing the duplicate concurrent recomputes that a small channel/fingerprint set generates under load; it helps even with the cache off (concurrent misses still de-duplicate).
+
+**Test count: 317 → 331, all run under the race detector.**
 
 ## Development
 
