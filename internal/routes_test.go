@@ -34,8 +34,14 @@ type routeTestMockService struct{}
 func (m *routeTestMockService) AddStats(_ *models.InputStats)                    {}
 func (m *routeTestMockService) AggregateStats()                                  {}
 func (m *routeTestMockService) GetStatistic(_ string) map[int]*models.StatRecord { return nil }
+func (m *routeTestMockService) GetStatisticPage(_ string, _, _ int) (map[int]*models.StatRecord, int) {
+	return nil, 0
+}
 func (m *routeTestMockService) GetPersonalStatistic(_ string) map[string]*models.Statistic {
 	return nil
+}
+func (m *routeTestMockService) GetPersonalStatisticPage(_ string, _, _ int) (map[string]*models.Statistic, int) {
+	return nil, 0
 }
 func (m *routeTestMockService) GetByFingerprint(_, _ string) map[int]*models.StatRecord { return nil }
 func (m *routeTestMockService) PutChannelData(_ string, _ map[int]*models.StatRecord, _ map[string]*models.Statistic) {

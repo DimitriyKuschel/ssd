@@ -328,6 +328,26 @@ func TestPSS_PersistenceData_Roundtrip(t *testing.T) {
 	}
 }
 
+func TestPSS_GetDataPage(t *testing.T) {
+	ps := newPSS()
+	for _, fp := range []string{"a", "b", "c", "d"} {
+		ps.IncStats(&InputStats{Fingerprint: fp, Views: []string{"1"}})
+	}
+
+	// Sorted page (by fingerprint) with the full total.
+	page, total := ps.GetDataPage(2, 1)
+	assert.Equal(t, 4, total)
+	assert.Len(t, page, 2)
+	assert.Contains(t, page, "b")
+	assert.Contains(t, page, "c")
+
+	// offset beyond data → empty non-nil page, real total.
+	page, total = ps.GetDataPage(10, 100)
+	assert.Equal(t, 4, total)
+	assert.Empty(t, page)
+	assert.NotNil(t, page)
+}
+
 // mockColdStorage is a test-only implementation of ColdStorageInterface.
 type mockColdStorage struct {
 	mu          sync.Mutex

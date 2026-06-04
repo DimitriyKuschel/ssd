@@ -2,6 +2,7 @@ package models
 
 import (
 	"fmt"
+	"slices"
 	"testing"
 
 	"github.com/RoaringBitmap/roaring/v2"
@@ -33,6 +34,60 @@ func BenchmarkBuildData(b *testing.B) {
 			}
 		})
 	}
+}
+
+// BenchmarkStatStoreGetData measures StatStore.GetData() with various record counts.
+func BenchmarkStatStoreGetData(b *testing.B) {
+	for _, n := range []int{100, 500, 1000} {
+		b.Run(fmt.Sprintf("n=%d", n), func(b *testing.B) {
+			s := NewStatStore(-1, 10)
+			for i := range n {
+				s.data[uint32(i)] = StatRecord{Views: 10, Clicks: 3, Ftr: 1, Hits: 4, Engagements: 2}
+			}
+
+			b.ResetTimer()
+			b.ReportAllocs()
+			for b.Loop() {
+				s.GetData()
+			}
+		})
+	}
+}
+
+// BenchmarkStatStoreGetData_FullVsPage contrasts the two end-to-end ways of
+// serving a small paginated read over a large channel:
+//   - "old": copy the whole channel (GetData) then sort+slice to the page, as the
+//     controller used to do via paginateIntMap.
+//   - "new": GetDataPage, which sorts keys but copies only the page.
+func BenchmarkStatStoreGetData_FullVsPage(b *testing.B) {
+	const n, limit = 5000, 20
+	s := NewStatStore(-1, 10)
+	for i := range n {
+		s.data[uint32(i)] = StatRecord{Views: 10, Clicks: 3, Ftr: 1, Hits: 4, Engagements: 2}
+	}
+
+	b.Run("old_GetData+paginate", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			data := s.GetData() // copies all n records
+			keys := make([]int, 0, len(data))
+			for k := range data {
+				keys = append(keys, k)
+			}
+			slices.Sort(keys)
+			page := make(map[int]*StatRecord, limit)
+			for _, k := range keys[:limit] {
+				page[k] = data[k]
+			}
+			_ = page
+		}
+	})
+	b.Run("new_GetDataPage", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			s.GetDataPage(limit, 0)
+		}
+	})
 }
 
 // BenchmarkGetData_OldStyle simulates old Statistic.GetData (simple deep copy).

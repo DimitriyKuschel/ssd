@@ -428,6 +428,42 @@ func TestStatStore_IncStats_TrendingHalving_IncludesHitsEngagements(t *testing.T
 	assert.Equal(t, 1, v.Ftr)
 }
 
+func TestStatStore_GetDataPage(t *testing.T) {
+	s := newStatStore()
+	for i := 1; i <= 5; i++ {
+		s.Set(i, &StatRecord{Views: i * 10})
+	}
+
+	// limit + offset returns the sorted page and the full total.
+	page, total := s.GetDataPage(2, 1)
+	assert.Equal(t, 5, total)
+	assert.Len(t, page, 2)
+	assert.Contains(t, page, 2)
+	assert.Contains(t, page, 3)
+
+	// limit<=0 returns from offset to the end.
+	page, total = s.GetDataPage(0, 3)
+	assert.Equal(t, 5, total)
+	assert.Len(t, page, 2)
+	assert.Contains(t, page, 4)
+	assert.Contains(t, page, 5)
+
+	// offset beyond data yields an empty (non-nil) page with the real total.
+	page, total = s.GetDataPage(10, 100)
+	assert.Equal(t, 5, total)
+	assert.Empty(t, page)
+	assert.NotNil(t, page)
+}
+
+func TestStatStore_GetDataPage_ComputesBounceRate(t *testing.T) {
+	s := newStatStore()
+	s.Set(1, &StatRecord{Views: 5, Hits: 10, Engagements: 4})
+
+	page, _ := s.GetDataPage(10, 0)
+	require.Contains(t, page, 1)
+	assert.Equal(t, 60, page[1].BounceRate) // (10-4)/10*100
+}
+
 func BenchmarkStatStore_IncStats(b *testing.B) {
 	s := newStatStore()
 	input := &InputStats{
